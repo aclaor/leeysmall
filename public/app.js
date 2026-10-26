@@ -258,7 +258,7 @@ function checkout() {
       <div class="two"><div class="field"><input name="zip" required placeholder="ZIP / Postal code" autocomplete="postal-code"></div><div class="field"><input name="phone" placeholder="Phone (for delivery updates)" autocomplete="tel"></div></div>
       <h2>Payment</h2><p class="muted" style="margin-top:-6px;font-size:14px">Pay securely with PayPal or any debit/credit card. All transactions are encrypted.</p>
       <div id="coError" class="note" style="background:#ffe4e6;color:#9f1239" hidden></div>
-      <div id="paypal" style="margin-top:14px;min-height:50px"></div></form>
+      <div id="paypal-buttons" style="margin-top:14px;min-height:50px"></div></form>
     <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
       <div class="discount"><input id="code" placeholder="Discount code"><button type="button" class="btn" id="applyCode">Apply</button></div>
       <div class="totals" id="totals"></div></div></div></div>`;
@@ -303,8 +303,8 @@ function checkout() {
         catch (e) { err(e.message + ". You have not been charged — please try again."); }
       },
       onError: () => err("Payment couldn't be completed. Please try again or use another method."),
-    }).render("#paypal");
-  }).catch(() => { $("#paypal").innerHTML = `<div class="note">Payments are being set up — checkout opens very soon.</div>`; });
+    }).render("#paypal-buttons");
+  }).catch(() => { $("#paypal-buttons").innerHTML = `<div class="note">Payments are being set up — checkout opens very soon.</div>`; });
 }
 
 function thankYou(params) {
