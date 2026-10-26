@@ -74,7 +74,7 @@ h1, h2, h3 { letter-spacing: -.02em; line-height: 1.15; margin: 0 0 .4em; }
 .link-arrow { font-weight: 600; font-size: 15px; white-space: nowrap; }
 .link-arrow:hover { color: var(--accent-ink); }
 
-.coll-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+.coll-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .coll-card { border-radius: var(--radius); overflow: hidden; background: var(--soft); transition: transform .2s; }
 .coll-card:hover { transform: translateY(-3px); }
 .coll-card .art { aspect-ratio: 1; height: auto !important; }

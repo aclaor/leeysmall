@@ -1,6 +1,6 @@
 # LeeysMall
 
-USA-focused gadget dropshipping store on Cloudflare Workers (worker: `leeymall`).
+USA-focused general dropshipping store on Cloudflare Workers (worker: `leeymall`).
 
 - `src/` Worker API (`/api/products`, `/api/collections`)
 - `public/` storefront (home, collections, product, cart drawer, checkout, tracking, policy pages)

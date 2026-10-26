@@ -30,6 +30,7 @@ export function ensureSchema(env) {
     await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
     const { n } = await env.DB.prepare("SELECT COUNT(*) n FROM products").first();
     if (n === 0) await seed(env);
+    await migrateToGeneralStore(env);
   })().catch((e) => { ready = null; throw e; });
   return ready;
 }
@@ -44,6 +45,19 @@ async function seed(env) {
   }
   stmts.push(env.DB.prepare("INSERT OR IGNORE INTO discounts (code, percent) VALUES ('WELCOME10', 10)"));
   await env.DB.batch(stmts);
+}
+
+// One-time update: gadget categories -> general store categories (gadget products move to Electronics).
+const OLD_GADGET_COLLECTIONS = ["audio", "charging", "smart-home", "phone", "desk"];
+async function migrateToGeneralStore(env) {
+  if (await env.DB.prepare("SELECT 1 FROM settings WHERE key='migr_general_v1'").first()) return;
+  const q = OLD_GADGET_COLLECTIONS.map(() => "?").join(",");
+  await env.DB.batch([
+    ...SEED_COLLECTIONS.map((c, i) => env.DB.prepare("INSERT INTO collections (id,name,blurb,sort) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET sort=excluded.sort").bind(c.id, c.name, c.blurb, i)),
+    env.DB.prepare(`UPDATE products SET collection='electronics' WHERE collection IN (${q})`).bind(...OLD_GADGET_COLLECTIONS),
+    env.DB.prepare(`DELETE FROM collections WHERE id IN (${q})`).bind(...OLD_GADGET_COLLECTIONS),
+    env.DB.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES ('migr_general_v1', datetime('now'))"),
+  ]);
 }
 
 const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };

@@ -210,8 +210,10 @@ async function setup() {
     ${row(true, "Database", "Connected and ready.")}
     ${row(s.config.paypal, "PayPal payments", s.config.paypal ? `Connected (${s.config.paypalEnv === "live" ? "LIVE — real payments" : "sandbox — test payments only"}).` : "Add PAYPAL_CLIENT_ID (in wrangler.jsonc) and the PAYPAL_SECRET secret in Cloudflare → Worker → Settings → Variables and Secrets.")}
     ${row(s.config.cj, "CJ Dropshipping", s.config.cj ? "API key set. Orders are sent to CJ automatically (unpaid — pay them in your CJ dashboard)." : "Add the CJ_API_KEY secret in Cloudflare → Worker → Settings → Variables and Secrets.")}
-    </div><div class="panel"><b>New collection</b><form id="cf" class="flex" style="margin-top:10px;flex-wrap:wrap"><input class="inp" name="name" placeholder="Name, e.g. Gaming" style="max-width:240px" required><input class="inp" name="blurb" placeholder="Short description" style="max-width:320px"><button class="btn sm">Add</button></form>
-    <p class="muted" style="margin-bottom:0">Current: ${collections.map((c) => esc(c.name)).join(", ")}</p></div>`;
+    </div><div class="panel"><b>Categories</b><form id="cf" class="flex" style="margin-top:10px;flex-wrap:wrap"><input class="inp" name="name" placeholder="Name, e.g. Gaming" style="max-width:240px" required><input class="inp" name="blurb" placeholder="Short description" style="max-width:320px"><button class="btn sm">Add</button></form>
+    <div class="chips" style="margin-top:14px">${collections.map((c) => `<span class="chip">${esc(c.name)} <button data-rmc="${c.id}" title="Remove" style="border:0;background:none;color:#e11d48;font-weight:700;padding:0 0 0 4px">×</button></span>`).join("")}</div>
+    <p class="muted" style="margin-bottom:0;font-size:13px">The first 5 categories show in the top menu; all of them show on the homepage, mobile menu and footer. Removing a category keeps its products (they just become uncategorised).</p></div>`;
+  main().querySelectorAll("[data-rmc]").forEach((b) => (b.onclick = async () => { if (!confirm("Remove this category?")) return; await api("/api/admin/collections/" + b.dataset.rmc, "DELETE"); collections = await api("/api/admin/collections"); setup(); }));
   $("#cf").onsubmit = async (e) => { e.preventDefault(); try { await api("/api/admin/collections", "POST", { name: e.target.name.value, blurb: e.target.blurb.value }); collections = await api("/api/admin/collections"); toast("Collection added"); setup(); } catch (er) { toast(er.message); } };
 }
 

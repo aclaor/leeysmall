@@ -312,6 +312,10 @@ async function admin(req, env, ctx, path, m, url) {
     return json({ ok: true, id });
   }
 
+  if ((p = path.match(/^\/api\/admin\/collections\/([\w-]+)$/)) && m === "DELETE") {
+    await env.DB.batch([env.DB.prepare("UPDATE products SET collection=NULL WHERE collection=?").bind(p[1]), env.DB.prepare("DELETE FROM collections WHERE id=?").bind(p[1])]);
+    return json({ ok: true });
+  }
   if (path === "/api/admin/discounts" && m === "GET") return json((await env.DB.prepare("SELECT * FROM discounts ORDER BY code").all()).results);
   if (path === "/api/admin/discounts" && m === "POST") {
     const b = await body(req), code = str(b.code, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, ""), pct = Number(b.percent);

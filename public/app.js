@@ -20,6 +20,14 @@ const ICONS = {
   mount: '<circle cx="100" cy="88" r="30"/><circle cx="100" cy="88" r="12"/><path d="M100 118v30M80 148h40"/>',
   stand: '<rect x="82" y="48" width="44" height="78" rx="8" transform="rotate(-12 104 87)"/><path d="M70 150h70M96 126l-10 24M116 126l8 24"/>',
   lamp: '<path d="M70 150h60M100 150V90l30-26"/><path d="M118 52l30 18-10 14-30-18z"/>',
+  home: '<path d="M52 104 100 62l48 42"/><rect x="66" y="100" width="68" height="52" rx="4"/><rect x="92" y="120" width="16" height="32"/>',
+  shirt: '<path d="M80 54 56 68l10 24 12-6v62h44V86l12 6 10-24-24-14c-4 10-12 14-20 14s-16-4-20-14z"/>',
+  heart: '<path d="M100 148s-46-28-46-62a24 24 0 0 1 46-10 24 24 0 0 1 46 10c0 34-46 62-46 62z"/>',
+  ball: '<circle cx="100" cy="100" r="44"/><path d="M60 82c26 10 54 10 80 0M60 118c26-10 54-10 80 0M100 56v88"/>',
+  toy: '<rect x="62" y="88" width="76" height="52" rx="10"/><circle cx="82" cy="146" r="9"/><circle cx="118" cy="146" r="9"/><rect x="78" y="62" width="40" height="28" rx="6"/>',
+  paw: '<ellipse cx="100" cy="124" rx="26" ry="22"/><circle cx="70" cy="92" r="11"/><circle cx="88" cy="70" r="11"/><circle cx="112" cy="70" r="11"/><circle cx="130" cy="92" r="11"/>',
+  car: '<path d="M52 122h96v-14l-14-6-12-24H78L66 102l-14 6z"/><circle cx="76" cy="126" r="11"/><circle cx="124" cy="126" r="11"/>',
+  bag: '<path d="M62 76h76l-6 74H68z"/><path d="M84 76v-8a16 16 0 0 1 32 0v8"/>',
   hub: '<rect x="56" y="80" width="88" height="44" rx="12"/><path d="M144 102h20"/><rect x="68" y="96" width="10" height="12" rx="2"/><rect x="86" y="96" width="10" height="12" rx="2"/><rect x="104" y="96" width="10" height="12" rx="2"/><rect x="122" y="96" width="10" height="12" rx="2"/>',
 };
 function art(p, variant = 0) {
@@ -37,7 +45,9 @@ function art(p, variant = 0) {
     <g transform="translate(100 100) rotate(${tilt}) scale(${scale}) translate(-100 -100)" fill="hsl(${h} 30% 18%)" fill-opacity=".9" stroke="hsl(${h} 80% 92%)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${ICONS[p.icon] || ICONS.hub}</g>
   </svg>`;
 }
-const collArt = (c) => art({ id: "c-" + c.id, title: c.name, hue: PRODUCTS.find((p) => p.collection === c.id)?.hue, icon: PRODUCTS.find((p) => p.collection === c.id)?.icon });
+const COLL_LOOK = { electronics: [210, "buds"], "home-kitchen": [25, "home"], fashion: [330, "shirt"], "beauty-health": [300, "heart"], "sports-outdoors": [140, "ball"], "toys-kids": [45, "toy"], pets: [15, "paw"], automotive: [0, "car"] };
+const collArt = (c) => { const lk = COLL_LOOK[c.id], p = PRODUCTS.find((x) => x.collection === c.id);
+  return art({ id: "c-" + c.id, title: c.name, hue: lk?.[0] ?? p?.hue ?? (c.id.length * 47) % 360, icon: lk?.[1] ?? p?.icon ?? "bag" }); };
 
 /* ---------- Cart ---------- */
 const cart = {
@@ -106,13 +116,13 @@ function home() {
   const pick = (id, i) => PRODUCTS.find((p) => p.id === id) || PRODUCTS[i % PRODUCTS.length];
   const hero = pick("aero-buds-pro", 0), h2 = pick("halo-desk-lamp", 1), h3 = pick("volt-20k-powerbank", 2), deal = pick("trio-wireless-station", 3);
   if (!PRODUCTS.length) { app.innerHTML = `<div class="wrap prose"><h1>New products coming soon</h1></div>`; return; }
-  document.title = "LeeysMall — Smart gadgets, fast US shipping";
+  document.title = "LeeysMall — Everything you need, delivered fast";
   app.innerHTML = `
   <section class="hero"><div class="wrap hero-inner">
-    <div><span class="eyebrow">New season · Up to 45% off</span>
-      <h1>Smart gadgets for everyday life.</h1>
-      <p>Earbuds, chargers, smart home and desk upgrades — hand-picked, fairly priced and shipped fast from US warehouses.</p>
-      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all gadgets</a><a class="btn ghost" href="/collections/audio" data-link>Shop audio</a></div></div>
+    <div><span class="eyebrow">New arrivals every week · Up to 45% off</span>
+      <h1>Everything you need, in one place.</h1>
+      <p>Home, tech, fashion, beauty, outdoors and more — hand-picked, fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
+      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn ghost" href="/collections/all?sort=best" data-link>Best sellers</a></div></div>
     <div class="hero-art"><a class="tile t1" href="/products/${hero.id}" data-link>${art(hero, 1)}</a><a class="tile t2" href="/products/${h2.id}" data-link>${art(h2, 2)}</a><a class="tile t3" href="/products/${h3.id}" data-link>${art(h3, 3)}</a></div>
   </div></section>
   ${trust()}
@@ -136,7 +146,7 @@ function collection(id, params) {
   const q = (params.get("q") || "").toLowerCase();
   let list = id === "all" ? [...PRODUCTS] : PRODUCTS.filter((p) => p.collection === id);
   if (q) list = PRODUCTS.filter((p) => (p.title + " " + p.description).toLowerCase().includes(q));
-  const title = q ? `Search: “${params.get("q")}”` : c ? c.name : "All gadgets";
+  const title = q ? `Search: “${params.get("q")}”` : c ? c.name : "All products";
   document.title = title + " — LeeysMall";
   const state = { sort: params.get("sort") || "featured", stock: params.get("stock") === "1", max: Number(params.get("max")) || 0, us: params.get("us") === "1" };
   const apply = () => {
@@ -177,7 +187,7 @@ function product(id) {
   let img = 0, qty = 1, country = "US";
   const off = p.compareAt ? Math.round((1 - p.price / p.compareAt) * 100) : 0;
   const related = PRODUCTS.filter((x) => x.collection === p.collection && x.id !== p.id).concat(PRODUCTS.filter((x) => x.collection !== p.collection)).slice(0, 4);
-  const coll = COLLECTIONS.find((c) => c.id === p.collection) || { id: "all", name: "All gadgets" };
+  const coll = COLLECTIONS.find((c) => c.id === p.collection) || { id: "all", name: "All products" };
   const stockTxt = p.stock === 0 ? `<div class="stock none">Sold out</div>` : p.stock < 60 ? `<div class="stock low">Only ${p.stock} left — order soon</div>` : `<div class="stock">In stock, ready to ship</div>`;
   app.innerHTML = `<div class="wrap"><div class="pdp">
     <div class="gallery"><div class="main" id="mainImg">${art(p, 0)}</div><div class="thumbs">${[...Array(Math.min(4, p.images?.length || 4)).keys()].map((i) => `<button data-img="${i}" class="${i === 0 ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
@@ -393,8 +403,9 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
   try {
     [PRODUCTS, COLLECTIONS, CONFIG] = await Promise.all(["/api/products", "/api/collections", "/api/config"].map((u) => fetch(u).then((r) => { if (!r.ok) throw 0; return r.json(); })));
   } catch { app.innerHTML = `<div class="wrap prose"><h1>Store is loading slowly</h1><p>Please refresh the page.</p></div>`; return; }
-  const links = `<a href="/collections/all" data-link>Shop all</a>` + COLLECTIONS.map((c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`).join("");
-  $("#nav").innerHTML = links;
+  const link = (c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`, allLink = `<a href="/collections/all" data-link>Shop all</a>`;
+  const links = allLink + COLLECTIONS.map(link).join("");
+  $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 5).map(link).join("");
   $("#mobileNav").innerHTML = links + `<a href="/track" data-link>Track order</a>`;
   $("#footerCollections").innerHTML = links;
   updateCount(); route();
