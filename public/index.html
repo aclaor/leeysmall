@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LeeysMall — Smart gadgets, fast US shipping</title>
+  <meta name="description" content="LeeysMall: everyday gadgets for audio, charging, smart home and desk setups. Fast US shipping, worldwide delivery, 30-day returns.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23111'/><text x='16' y='22' font-family='Arial' font-weight='700' font-size='16' fill='%2338bdf8' text-anchor='middle'>L</text></svg>">
+</head>
+<body>
+  <div class="announce" id="announce">Free US shipping on orders over $49 · 30-day easy returns</div>
+
+  <header class="header">
+    <div class="wrap header-row">
+      <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open menu">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <a href="/" class="logo" data-link>Leeys<span>Mall</span></a>
+      <nav class="nav" id="nav"></nav>
+      <div class="header-actions">
+        <button class="icon-btn" id="searchBtn" aria-label="Search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </button>
+        <a href="/account" class="icon-btn" data-link aria-label="Account">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        </a>
+        <button class="icon-btn cart-btn" id="cartBtn" aria-label="Cart">
+          <svg viewBox="0 0 24 24"><path d="M5 7h14l-1.5 12h-11z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+          <span class="cart-count" id="cartCount">0</span>
+        </button>
+      </div>
+    </div>
+    <form class="search-bar" id="searchBar" hidden>
+      <div class="wrap"><input type="search" id="searchInput" placeholder="Search gadgets…" autocomplete="off"></div>
+    </form>
+  </header>
+
+  <aside class="mobile-nav" id="mobileNav" hidden></aside>
+
+  <main id="app"></main>
+
+  <footer class="footer">
+    <div class="wrap footer-grid">
+      <div>
+        <div class="logo">Leeys<span>Mall</span></div>
+        <p class="muted">Smart gadgets for everyday life. A Leeys Technology store.</p>
+      </div>
+      <div><h4>Shop</h4><div id="footerCollections"></div></div>
+      <div><h4>Help</h4>
+        <a href="/track" data-link>Track your order</a>
+        <a href="/pages/shipping" data-link>Shipping</a>
+        <a href="/pages/returns" data-link>Returns & refunds</a>
+        <a href="/pages/contact" data-link>Contact us</a>
+      </div>
+      <div><h4>Newsletter</h4>
+        <p class="muted">Deals and new arrivals, twice a month.</p>
+        <form class="newsletter" onsubmit="event.preventDefault(); this.innerHTML='<p>Thanks! You&#39;re subscribed.</p>'">
+          <input type="email" required placeholder="you@email.com"><button class="btn">Join</button>
+        </form>
+      </div>
+    </div>
+    <div class="wrap footer-bottom">
+      <span>© <span id="year"></span> LeeysMall</span>
+      <span><a href="/pages/privacy" data-link>Privacy</a> · <a href="/pages/terms" data-link>Terms</a></span>
+    </div>
+  </footer>
+
+  <div class="overlay" id="overlay" hidden></div>
+  <aside class="drawer" id="drawer" aria-label="Cart" hidden></aside>
+  <div class="toast" id="toast"></div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
