@@ -10,11 +10,11 @@
     "run_worker_first": ["/api/*"]
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "leeysmall-db", "database_id": "REPLACE_WITH_D1_DATABASE_ID" }
+    { "binding": "DB", "database_name": "leeysmall-db", "database_id": "f8a6b057-c8e0-47c5-99c7-f89386fb9bfd" }
   ],
   // Public values. Secrets (PAYPAL_SECRET, CJ_API_KEY, ADMIN_PASSWORD) are set in the Cloudflare dashboard.
   "vars": {
-    "PAYPAL_CLIENT_ID": "",
+    "PAYPAL_CLIENT_ID": "BAAX5EpJbC0LY8CeN-FPNHGRd5js_f5KccvW_HeQ-Envw-FpvIia8Gos7S274l6FvLrrPYmZF29xitqQEU",
     "PAYPAL_ENV": "sandbox"
   },
   // Every 6 hours: refresh CJ stock/costs and pick up tracking numbers
