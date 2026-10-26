@@ -1,5 +1,5 @@
 {
-  // LeeysMall — Cloudflare Worker serving the storefront + API
+  // LeeysMall — Cloudflare Worker serving the storefront, API and admin
   "name": "leeymall",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
@@ -8,5 +8,16 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
-  }
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "leeysmall-db", "database_id": "REPLACE_WITH_D1_DATABASE_ID" }
+  ],
+  // Public values. Secrets (PAYPAL_SECRET, CJ_API_KEY, ADMIN_PASSWORD) are set in the Cloudflare dashboard.
+  "vars": {
+    "PAYPAL_CLIENT_ID": "",
+    "PAYPAL_ENV": "sandbox"
+  },
+  // Every 6 hours: refresh CJ stock/costs and pick up tracking numbers
+  "triggers": { "crons": ["17 */6 * * *"] },
+  "observability": { "enabled": true }
 }

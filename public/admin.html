@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>LeeysMall Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { background: #f4f5f7; }
+    .adm { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
+    .side { background: #0f1115; color: #cbd5e1; padding: 20px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; }
+    .side .logo { color: #fff; padding: 4px 10px 18px; }
+    .side a { padding: 10px 12px; border-radius: 10px; font-size: 14px; font-weight: 500; display: flex; justify-content: space-between; }
+    .side a:hover { background: #1e222b; color: #fff; }
+    .side a.on { background: #fff; color: #0f1115; }
+    .side .pill { background: #e11d48; color: #fff; border-radius: 9px; font-size: 11px; padding: 1px 7px; }
+    .side .bottom { margin-top: auto; }
+    .main { padding: 28px 32px 60px; min-width: 0; }
+    .main h1 { font-size: 26px; margin-bottom: 18px; }
+    .panel { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+    .kpi .l { font-size: 13px; color: var(--muted); }
+    .kpi .v { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px; }
+    .kpi .s { font-size: 12px; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; padding: 10px 10px; border-bottom: 1px solid var(--line); }
+    td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tr.click:hover td { background: #fafbfc; cursor: pointer; }
+    .tbl-wrap { overflow-x: auto; }
+    .st { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #eef2f7; color: #334155; white-space: nowrap; }
+    .st.paid, .st.action_needed { background: #fef3c7; color: #92400e; }
+    .st.processing { background: #e0f2fe; color: #075985; }
+    .st.shipped, .st.delivered { background: #dcfce7; color: #166534; }
+    .st.cancelled, .st.refunded { background: #fee2e2; color: #991b1b; }
+    .pthumb { width: 44px; height: 44px; border-radius: 8px; overflow: hidden; background: var(--soft); flex: none; }
+    .pthumb img { width: 100%; height: 100%; object-fit: cover; }
+    .flex { display: flex; gap: 12px; align-items: center; }
+    .btn.sm { padding: 8px 14px; font-size: 13px; }
+    .btn.danger { background: #e11d48; }
+    .inp { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; width: 100%; background: #fff; }
+    textarea.inp { min-height: 90px; resize: vertical; font-family: inherit; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-grid label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+    .form-grid .full { grid-column: 1 / -1; }
+    .modal-bg { position: fixed; inset: 0; background: rgba(15,17,21,.45); z-index: 80; display: grid; place-items: start center; overflow: auto; padding: 40px 16px; }
+    .modal { background: #fff; border-radius: 16px; width: min(760px, 100%); padding: 24px; }
+    .cj-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .cj-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
+    .cj-card img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--soft); }
+    .cj-card .b { padding: 10px 12px; font-size: 13px; display: grid; gap: 6px; flex: 1; }
+    .check { display: grid; gap: 10px; }
+    .check div { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #e11d48; flex: none; }
+    .dot.ok { background: #059669; }
+    .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+    .bars { display: flex; align-items: end; gap: 6px; height: 120px; margin-top: 10px; }
+    .bars div { flex: 1; background: #0ea5e9; border-radius: 4px 4px 0 0; min-height: 2px; position: relative; }
+    .bars div span { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--muted); white-space: nowrap; }
+    pre.notes { white-space: pre-wrap; background: #fffbeb; border-radius: 10px; padding: 12px; font-size: 13px; margin: 0; font-family: inherit; }
+    @media (max-width: 900px) {
+      .adm { grid-template-columns: 1fr; }
+      .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 12px; }
+      .side .logo { width: 100%; padding-bottom: 8px; }
+      .side .bottom { margin: 0; }
+      .main { padding: 20px 16px 60px; }
+      .kpis, .cj-grid { grid-template-columns: repeat(2, 1fr); }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div class="toast" id="toast"></div>
+  <script src="/admin.js" type="module"></script>
+</body>
+</html>

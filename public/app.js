@@ -5,7 +5,7 @@ const FREE_SHIP = 49;
 const money = (n) => "$" + n.toFixed(2);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-let PRODUCTS = [], COLLECTIONS = [];
+let PRODUCTS = [], COLLECTIONS = [], CONFIG = { countries: {} };
 
 /* ---------- Product art (placeholder visuals until real supplier photos are imported) ---------- */
 const ICONS = {
@@ -23,6 +23,10 @@ const ICONS = {
   hub: '<rect x="56" y="80" width="88" height="44" rx="12"/><path d="M144 102h20"/><rect x="68" y="96" width="10" height="12" rx="2"/><rect x="86" y="96" width="10" height="12" rx="2"/><rect x="104" y="96" width="10" height="12" rx="2"/><rect x="122" y="96" width="10" height="12" rx="2"/>',
 };
 function art(p, variant = 0) {
+  if (p.images && p.images.length) {
+    const src = p.images[variant % p.images.length];
+    return `<img class="art" src="${esc(src)}" alt="${esc(p.title)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;background:#fff">`;
+  }
   const h = p.hue ?? 210, h2 = (h + 40 + variant * 25) % 360;
   const id = "g" + p.id + variant;
   const tilt = [0, -8, 8, 0][variant] || 0, scale = [1, 1.15, 0.9, 1.3][variant] || 1;
@@ -99,8 +103,9 @@ const trust = () => `<section class="trust"><div class="wrap trust-row">${[
 /* ---------- Pages ---------- */
 function home() {
   const best = [...PRODUCTS].sort((a, b) => b.reviews - a.reviews).slice(0, 8);
-  const hero = PRODUCTS.find((p) => p.id === "aero-buds-pro"), h2 = PRODUCTS.find((p) => p.id === "halo-desk-lamp"), h3 = PRODUCTS.find((p) => p.id === "volt-20k-powerbank");
-  const deal = PRODUCTS.find((p) => p.id === "trio-wireless-station");
+  const pick = (id, i) => PRODUCTS.find((p) => p.id === id) || PRODUCTS[i % PRODUCTS.length];
+  const hero = pick("aero-buds-pro", 0), h2 = pick("halo-desk-lamp", 1), h3 = pick("volt-20k-powerbank", 2), deal = pick("trio-wireless-station", 3);
+  if (!PRODUCTS.length) { app.innerHTML = `<div class="wrap prose"><h1>New products coming soon</h1></div>`; return; }
   document.title = "LeeysMall — Smart gadgets, fast US shipping";
   app.innerHTML = `
   <section class="hero"><div class="wrap hero-inner">
@@ -116,7 +121,7 @@ function home() {
   <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Best sellers</h2><a class="link-arrow" href="/collections/all" data-link>Shop all →</a></div>
     <div class="grid">${best.map(card).join("")}</div></div></section>
   <section class="section" style="padding-top:0"><div class="wrap"><div class="banner">
-    <div class="copy"><span class="eyebrow">Deal of the week</span><h2>${esc(deal.title)}</h2><p>One pad for your phone, earbuds and watch. Now ${money(deal.price)} — was ${money(deal.compareAt)}.</p><a class="btn accent" href="/products/${deal.id}" data-link>Grab the deal</a></div>
+    <div class="copy"><span class="eyebrow">Deal of the week</span><h2>${esc(deal.title)}</h2><p>Now ${money(deal.price)}${deal.compareAt ? ` — was ${money(deal.compareAt)}` : ""}. Limited stock at this price.</p><a class="btn accent" href="/products/${deal.id}" data-link>Grab the deal</a></div>
     ${art(deal, 2)}</div></div></section>
   <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Loved by customers</h2></div>
     <div class="reviews">${[
@@ -172,10 +177,10 @@ function product(id) {
   let img = 0, qty = 1, country = "US";
   const off = p.compareAt ? Math.round((1 - p.price / p.compareAt) * 100) : 0;
   const related = PRODUCTS.filter((x) => x.collection === p.collection && x.id !== p.id).concat(PRODUCTS.filter((x) => x.collection !== p.collection)).slice(0, 4);
-  const coll = COLLECTIONS.find((c) => c.id === p.collection);
+  const coll = COLLECTIONS.find((c) => c.id === p.collection) || { id: "all", name: "All gadgets" };
   const stockTxt = p.stock === 0 ? `<div class="stock none">Sold out</div>` : p.stock < 60 ? `<div class="stock low">Only ${p.stock} left — order soon</div>` : `<div class="stock">In stock, ready to ship</div>`;
   app.innerHTML = `<div class="wrap"><div class="pdp">
-    <div class="gallery"><div class="main" id="mainImg">${art(p, 0)}</div><div class="thumbs">${[0, 1, 2, 3].map((i) => `<button data-img="${i}" class="${i === 0 ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
+    <div class="gallery"><div class="main" id="mainImg">${art(p, 0)}</div><div class="thumbs">${[...Array(Math.min(4, p.images?.length || 4)).keys()].map((i) => `<button data-img="${i}" class="${i === 0 ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
     <div><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/collections/${coll.id}" data-link>${esc(coll.name)}</a></div>
       <h1>${esc(p.title)}</h1>${stars(p.rating, p.reviews)}
       <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
@@ -219,56 +224,112 @@ function cartPage() {
   : `<div class="empty"><p>Your cart is empty.</p><a class="btn" href="/collections/all" data-link>Start shopping</a></div>`}</div>`;
 }
 
-const DISCOUNTS = { WELCOME10: 0.1 };
+const COUNTRY_OPTS = () => Object.entries(CONFIG.countries).map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("");
+let paypalLoad = null;
+function loadPaypal() {
+  if (!CONFIG.paypalClientId) return Promise.reject(new Error("no client id"));
+  return (paypalLoad ||= new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(CONFIG.paypalClientId)}&currency=USD&intent=capture&components=buttons&enable-funding=card`;
+    s.onload = ok; s.onerror = () => { paypalLoad = null; fail(new Error("PayPal failed to load")); }; document.head.appendChild(s);
+  }));
+}
+async function api(path, data) {
+  const r = await fetch(path, data ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Something went wrong");
+  return j;
+}
+
 function checkout() {
   document.title = "Checkout — LeeysMall";
   const lines = cart.lines();
   if (!lines.length) return go("/cart", true);
-  let code = "", country = "US", pay = "paypal";
-  const render = () => {
-    const sub = cart.subtotal(), disc = DISCOUNTS[code] ? sub * DISCOUNTS[code] : 0;
-    const ship = country === "US" ? (sub >= FREE_SHIP ? 0 : 4.99) : 12.99;
-    $("#totals").innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(sub)}</span></div>
-      ${disc ? `<div class="row-between"><span>Discount (${code})</span><span>−${money(disc)}</span></div>` : ""}
-      <div class="row-between"><span>Shipping</span><span>${ship ? money(ship) : "Free"}</span></div>
-      <div class="row-between"><span class="muted">Estimated tax</span><span class="muted">Calculated next</span></div>
-      <div class="row-between grand"><span>Total</span><span>USD ${money(sub - disc + ship)}</span></div>`;
-  };
+  let code = "";
   app.innerHTML = `<div class="wrap"><div class="checkout">
-    <form class="co-form" id="coForm"><div class="crumbs"><a href="/cart" data-link>Cart</a> / Information / Payment</div>
-      <h2>Contact</h2><div class="field"><input type="email" required placeholder="Email"></div>
-      <label class="muted" style="font-size:14px"><input type="checkbox" checked> Email me with news and offers</label>
+    <form class="co-form" id="coForm" novalidate><div class="crumbs"><a href="/cart" data-link>Cart</a> / Information / Payment</div>
+      <h2>Contact</h2><div class="field"><input name="email" type="email" required placeholder="Email" autocomplete="email"></div>
+      <label class="muted" style="font-size:14px"><input type="checkbox" name="marketing" checked> Email me with news and offers</label>
       <h2>Delivery</h2>
-      <div class="field"><select id="coCountry">${[["US", "United States"], ["CA", "Canada"], ["GB", "United Kingdom"], ["AU", "Australia"], ["PH", "Philippines"], ["OT", "Other"]].map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></div>
-      <div class="two"><div class="field"><input required placeholder="First name"></div><div class="field"><input required placeholder="Last name"></div></div>
-      <div class="field"><input required placeholder="Address"></div><div class="field"><input placeholder="Apartment, suite, etc. (optional)"></div>
-      <div class="two"><div class="field"><input required placeholder="City"></div><div class="field"><input required placeholder="ZIP / Postal code"></div></div>
-      <div class="field"><input placeholder="Phone (for delivery updates)"></div>
-      <h2>Payment</h2><div class="pay-opts">
-        <label class="pay-opt on"><input type="radio" name="pay" value="paypal" checked> PayPal</label>
-        <label class="pay-opt"><input type="radio" name="pay" value="card"> Credit or debit card</label></div>
-      <div class="note">Preview mode: payments connect in the next stage, so no charge will be made.</div>
-      <button class="btn accent block" style="margin-top:18px;padding:16px">Pay now</button></form>
+      <div class="field"><select name="country" id="coCountry" autocomplete="country">${COUNTRY_OPTS()}</select></div>
+      <div class="two"><div class="field"><input name="firstName" required placeholder="First name" autocomplete="given-name"></div><div class="field"><input name="lastName" required placeholder="Last name" autocomplete="family-name"></div></div>
+      <div class="field"><input name="address1" required placeholder="Address" autocomplete="address-line1"></div><div class="field"><input name="address2" placeholder="Apartment, suite, etc. (optional)" autocomplete="address-line2"></div>
+      <div class="two"><div class="field"><input name="city" required placeholder="City" autocomplete="address-level2"></div><div class="field"><input name="province" placeholder="State / Province" autocomplete="address-level1"></div></div>
+      <div class="two"><div class="field"><input name="zip" required placeholder="ZIP / Postal code" autocomplete="postal-code"></div><div class="field"><input name="phone" placeholder="Phone (for delivery updates)" autocomplete="tel"></div></div>
+      <h2>Payment</h2><p class="muted" style="margin-top:-6px;font-size:14px">Pay securely with PayPal or any debit/credit card. All transactions are encrypted.</p>
+      <div id="coError" class="note" style="background:#ffe4e6;color:#9f1239" hidden></div>
+      <div id="paypal" style="margin-top:14px;min-height:50px"></div></form>
     <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
-      <div class="discount"><input id="code" placeholder="Discount code (try WELCOME10)"><button type="button" class="btn" id="applyCode">Apply</button></div>
+      <div class="discount"><input id="code" placeholder="Discount code"><button type="button" class="btn" id="applyCode">Apply</button></div>
       <div class="totals" id="totals"></div></div></div></div>`;
-  render();
-  $("#coCountry").onchange = (e) => { country = e.target.value; render(); };
-  $("#applyCode").onclick = () => { const c = $("#code").value.trim().toUpperCase(); if (DISCOUNTS[c]) { code = c; toast("Discount applied"); } else toast("That code isn't valid"); render(); };
-  app.querySelectorAll('input[name="pay"]').forEach((r) => (r.onchange = () => { pay = r.value; app.querySelectorAll(".pay-opt").forEach((o) => o.classList.toggle("on", o.contains(r))); }));
-  $("#coForm").onsubmit = (e) => { e.preventDefault(); const n = "LM" + Date.now().toString().slice(-6); cart.items = []; cart.save(); go("/thank-you?order=" + n); };
+  const form = $("#coForm"), err = (m) => { const e = $("#coError"); e.textContent = m || ""; e.hidden = !m; };
+  const items = () => cart.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
+  const quote = async () => {
+    try {
+      const q = await api("/api/quote", { items: items(), code, country: form.country.value });
+      $("#totals").innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(q.subtotal)}</span></div>
+        ${q.discount ? `<div class="row-between"><span>Discount (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
+        <div class="row-between"><span>Shipping</span><span>${q.shipping ? money(q.shipping) : "Free"}</span></div>
+        <div class="row-between grand"><span>Total</span><span>USD ${money(q.total)}</span></div>`;
+      err("");
+    } catch (e) { err(e.message); }
+  };
+  quote();
+  form.country.onchange = quote;
+  $("#applyCode").onclick = async () => {
+    try { const d = await api("/api/discount", { code: $("#code").value }); code = d.code; toast(`${d.percent}% discount applied`); quote(); }
+    catch (e) { toast(e.message); }
+  };
+  const valid = () => {
+    for (const el of form.querySelectorAll("[required]")) if (!el.value.trim()) { el.focus(); err("Please fill in " + el.placeholder.toLowerCase() + "."); return false; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.value)) { form.email.focus(); err("Please enter a valid email."); return false; }
+    err(""); return true;
+  };
+  form.onsubmit = (e) => e.preventDefault();
+  let localId = null;
+  loadPaypal().then(() => {
+    window.paypal.Buttons({
+      style: { layout: "vertical", shape: "pill", label: "pay", height: 48 },
+      onClick: (_, actions) => (valid() ? actions.resolve() : actions.reject()),
+      createOrder: async () => {
+        const f = form, r = await api("/api/checkout", {
+          items: items(), code, country: f.country.value, email: f.email.value, marketing: f.marketing.checked,
+          address: { firstName: f.firstName.value, lastName: f.lastName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, province: f.province.value, zip: f.zip.value, phone: f.phone.value },
+        }).catch((e) => { err(e.message); throw e; });
+        localId = r.orderId; return r.paypalOrderId;
+      },
+      onApprove: async () => {
+        try { const r = await api("/api/checkout/capture", { orderId: localId }); cart.items = []; cart.save(); go("/thank-you?order=" + encodeURIComponent(r.orderId)); }
+        catch (e) { err(e.message + ". You have not been charged — please try again."); }
+      },
+      onError: () => err("Payment couldn't be completed. Please try again or use another method."),
+    }).render("#paypal");
+  }).catch(() => { $("#paypal").innerHTML = `<div class="note">Payments are being set up — checkout opens very soon.</div>`; });
 }
 
 function thankYou(params) {
   const n = esc(params.get("order") || "");
-  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed (preview). You'll get an email with tracking once it ships.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
+  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
 }
 
-function track() {
+const STATUS_TEXT = { paid: "Payment received", processing: "Preparing your order", action_needed: "Preparing your order", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", refunded: "Refunded" };
+function track(params) {
   document.title = "Track your order — LeeysMall";
-  app.innerHTML = `<div class="wrap prose"><h1>Track your order</h1><p>Enter the order number from your confirmation email.</p>
-    <form class="card-box" id="tForm"><div class="field"><input required placeholder="Order number, e.g. LM123456"></div><div class="field"><input type="email" required placeholder="Email used at checkout"></div><button class="btn block">Track</button></form><div id="tOut"></div></div>`;
-  $("#tForm").onsubmit = (e) => { e.preventDefault(); $("#tOut").innerHTML = `<p class="muted" style="margin-top:16px">Order lookup goes live with the order system in the next stage.</p>`; };
+  app.innerHTML = `<div class="wrap prose"><h1>Track your order</h1><p>Enter the order number from your confirmation and the email you used at checkout.</p>
+    <form class="card-box" id="tForm"><div class="field"><input name="id" required placeholder="Order number, e.g. LM7K2QX9A1B" value="${esc(params.get("order") || "")}"></div><div class="field"><input name="email" type="email" required placeholder="Email used at checkout"></div><button class="btn block">Track</button></form><div id="tOut"></div></div>`;
+  $("#tForm").onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target, out = $("#tOut");
+    try {
+      const o = await api(`/api/orders/lookup?id=${encodeURIComponent(f.id.value)}&email=${encodeURIComponent(f.email.value)}`);
+      const steps = ["paid", "processing", "shipped", "delivered"], cur = Math.max(0, steps.indexOf(o.status === "action_needed" ? "processing" : o.status));
+      out.innerHTML = `<div class="card-box" style="margin-top:18px;max-width:none"><div class="row-between"><b>Order #${esc(o.id)}</b><span class="eyebrow" style="margin:0">${esc(STATUS_TEXT[o.status] || o.status)}</span></div>
+        <div class="bar" style="margin:14px 0 6px"><i style="width:${((cur + 1) / steps.length) * 100}%"></i></div>
+        <div class="row-between muted" style="font-size:12px">${steps.map((s) => `<span>${STATUS_TEXT[s]}</span>`).join("")}</div>
+        ${o.tracking_number ? `<p style="margin-top:16px">Tracking number: <b>${esc(o.tracking_number)}</b>${o.tracking_carrier ? ` (${esc(o.tracking_carrier)})` : ""}<br><a style="text-decoration:underline" target="_blank" rel="noopener" href="https://t.17track.net/en#nums=${encodeURIComponent(o.tracking_number)}">Follow your package →</a></p>` : `<p class="muted" style="margin-top:16px">Your tracking number will appear here once the order ships.</p>`}
+        ${o.items.map((l) => `<div class="row-between" style="font-size:14px;padding:6px 0;border-top:1px solid var(--line)"><span>${l.qty} × ${esc(l.title)}${l.variant ? " · " + esc(l.variant) : ""}</span><span>${money(l.price * l.qty)}</span></div>`).join("")}
+        <div class="row-between" style="font-weight:700;padding-top:8px"><span>Total</span><span>${money(o.total)}</span></div></div>`;
+    } catch (er) { out.innerHTML = `<p class="note" style="background:#ffe4e6;color:#9f1239">${esc(er.message)}</p>`; }
+  };
 }
 
 function account() {
@@ -298,7 +359,7 @@ function route() {
   else if (pathname === "/cart") cartPage();
   else if (pathname === "/checkout") checkout();
   else if (pathname === "/thank-you") thankYou(params);
-  else if (pathname === "/track") track();
+  else if (pathname === "/track") track(params);
   else if (pathname === "/account") account();
   else if ((m = pathname.match(/^\/pages\/([\w-]+)$/))) contentPage(m[1]);
   else notFound();
@@ -322,6 +383,7 @@ function refreshCartViews() { if (!$("#drawer").hidden) renderDrawer(); if (loca
 $("#cartBtn").onclick = openDrawer;
 $("#searchBtn").onclick = () => { const b = $("#searchBar"); b.hidden = !b.hidden; if (!b.hidden) $("#searchInput").focus(); };
 $("#searchBar").onsubmit = (e) => { e.preventDefault(); const q = $("#searchInput").value.trim(); if (q) { $("#searchBar").hidden = true; go("/search?q=" + encodeURIComponent(q)); } };
+$("#newsletter").onsubmit = async (e) => { e.preventDefault(); const f = e.target; try { await api("/api/subscribe", { email: f.querySelector("input").value }); f.innerHTML = "<p>Thanks! You're subscribed.</p>"; } catch (er) { toast(er.message); } };
 $("#menuBtn").onclick = () => { $("#mobileNav").hidden = false; $("#overlay").hidden = false; };
 window.addEventListener("popstate", route);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
@@ -329,7 +391,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
 (async function init() {
   $("#year").textContent = new Date().getFullYear();
   try {
-    [PRODUCTS, COLLECTIONS] = await Promise.all([fetch("/api/products").then((r) => r.json()), fetch("/api/collections").then((r) => r.json())]);
+    [PRODUCTS, COLLECTIONS, CONFIG] = await Promise.all(["/api/products", "/api/collections", "/api/config"].map((u) => fetch(u).then((r) => { if (!r.ok) throw 0; return r.json(); })));
   } catch { app.innerHTML = `<div class="wrap prose"><h1>Store is loading slowly</h1><p>Please refresh the page.</p></div>`; return; }
   const links = `<a href="/collections/all" data-link>Shop all</a>` + COLLECTIONS.map((c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`).join("");
   $("#nav").innerHTML = links;
