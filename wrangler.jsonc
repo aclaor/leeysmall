@@ -15,7 +15,7 @@
   // Public values. Secrets (PAYPAL_SECRET, CJ_API_KEY, ADMIN_PASSWORD) are set in the Cloudflare dashboard.
   "vars": {
     "PAYPAL_CLIENT_ID": "BAAX5EpJbC0LY8CeN-FPNHGRd5js_f5KccvW_HeQ-Envw-FpvIia8Gos7S274l6FvLrrPYmZF29xitqQEU",
-    "PAYPAL_ENV": "sandbox"
+    "PAYPAL_ENV": "live"
   },
   // Every 6 hours: refresh CJ stock/costs and pick up tracking numbers
   "triggers": { "crons": ["17 */6 * * *"] },
