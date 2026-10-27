@@ -33,16 +33,23 @@ const ICONS = {
 function art(p, variant = 0) {
   if (p.images && p.images.length) {
     const src = p.images[variant % p.images.length];
-    return `<img class="art" src="${esc(src)}" alt="${esc(p.title)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;background:#fff">`;
+    return `<div class="art photo"><img src="${esc(src)}" alt="${esc(p.title)}" loading="lazy"></div>`;
   }
-  const h = p.hue ?? 210, h2 = (h + 40 + variant * 25) % 360;
-  const id = "g" + p.id + variant;
-  const tilt = [0, -8, 8, 0][variant] || 0, scale = [1, 1.15, 0.9, 1.3][variant] || 1;
+  // Blue-spotlight studio scene: silver product on deep navy, like a premium ad.
+  const h = 200 + ((p.hue ?? 210) % 50), id = "g" + String(p.id).replace(/\W/g, "") + variant;
+  const tilt = [0, -8, 8, 0][variant] || 0, scale = [1, 1.12, 0.92, 1.25][variant] || 1;
+  const sx = [150, 60, 140, 100][variant] ?? 150, sy = [40, 50, 160, 30][variant] ?? 40;
   return `<svg class="art" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(p.title)}" style="width:100%;height:100%">
-    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h} 85% 94%)"/><stop offset="1" stop-color="hsl(${h2} 80% 84%)"/></linearGradient></defs>
-    <rect width="200" height="200" fill="url(#${id})"/>
-    <circle cx="150" cy="44" r="${30 + variant * 6}" fill="hsl(${h} 90% 98% / .7)"/>
-    <g transform="translate(100 100) rotate(${tilt}) scale(${scale}) translate(-100 -100)" fill="hsl(${h} 30% 18%)" fill-opacity=".9" stroke="hsl(${h} 80% 92%)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${ICONS[p.icon] || ICONS.hub}</g>
+    <defs>
+      <radialGradient id="${id}s" cx="${sx / 200}" cy="${sy / 200}" r=".85"><stop offset="0" stop-color="hsl(${h} 95% 55% / .55)"/><stop offset=".45" stop-color="hsl(${h + 10} 90% 30% / .25)"/><stop offset="1" stop-color="#050812" stop-opacity="0"/></radialGradient>
+      <linearGradient id="${id}m" x1="0" y1="0" x2=".6" y2="1"><stop offset="0" stop-color="#f4f7ff"/><stop offset=".45" stop-color="#9aa8c4"/><stop offset="1" stop-color="#2b3550"/></linearGradient>
+      <radialGradient id="${id}f" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="hsl(${h} 100% 60% / .45)"/><stop offset="1" stop-color="hsl(${h} 100% 60% / 0)"/></radialGradient>
+    </defs>
+    <rect width="200" height="200" fill="#060a16"/>
+    <rect width="200" height="200" fill="url(#${id}s)"/>
+    <ellipse cx="100" cy="166" rx="62" ry="10" fill="url(#${id}f)"/>
+    <g fill="#fff"><circle cx="${30 + variant * 37 % 140}" cy="34" r="1.2" opacity=".9"/><circle cx="172" cy="${120 - variant * 13}" r="1" opacity=".7"/><circle cx="24" cy="150" r=".8" opacity=".6"/><path d="M168 30l1.2 4 4 1.2-4 1.2-1.2 4-1.2-4-4-1.2 4-1.2z" opacity=".85"/></g>
+    <g transform="translate(100 100) rotate(${tilt}) scale(${scale}) translate(-100 -100)" fill="url(#${id}m)" stroke="hsl(${h} 100% 78%)" stroke-opacity=".55" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[p.icon] || ICONS.hub}</g>
   </svg>`;
 }
 const COLL_LOOK = { electronics: [210, "buds"], "home-kitchen": [25, "home"], fashion: [330, "shirt"], "beauty-health": [300, "heart"], "sports-outdoors": [140, "ball"], "toys-kids": [45, "toy"], pets: [15, "paw"], automotive: [0, "car"] };
@@ -92,10 +99,10 @@ function closeAll() { $("#drawer").hidden = true; $("#overlay").hidden = true; $
 const stars = (r, n) => `<div class="stars"><i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${r.toFixed(1)} (${n.toLocaleString()})</div>`;
 function card(p) {
   const off = p.compareAt ? Math.round((1 - p.price / p.compareAt) * 100) : 0;
-  return `<div class="card"><a href="/products/${p.id}" data-link><div class="media">
+  return `<div class="card"><div class="media-wrap"><a href="/products/${p.id}" data-link><div class="media">
       ${p.stock === 0 ? `<span class="badge out">Sold out</span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : ""}
       ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}</div></a>
-    ${p.stock > 0 ? `<button class="btn quick-add" data-add="${p.id}">Quick add</button>` : ""}
+    ${p.stock > 0 ? `<button class="btn quick-add" data-add="${p.id}">Quick add</button>` : ""}</div>
     <a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>${stars(p.rating, p.reviews)}
     <div class="price ${off ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s>` : ""}</div></div>`;
 }
@@ -267,7 +274,7 @@ function checkout() {
       <div class="two"><div class="field"><input name="city" required placeholder="City" autocomplete="address-level2"></div><div class="field"><input name="province" placeholder="State / Province" autocomplete="address-level1"></div></div>
       <div class="two"><div class="field"><input name="zip" required placeholder="ZIP / Postal code" autocomplete="postal-code"></div><div class="field"><input name="phone" placeholder="Phone (for delivery updates)" autocomplete="tel"></div></div>
       <h2>Payment</h2><p class="muted" style="margin-top:-6px;font-size:14px">Pay securely with PayPal or any debit/credit card. All transactions are encrypted.</p>
-      <div id="coError" class="note" style="background:#ffe4e6;color:#9f1239" hidden></div>
+      <div id="coError" class="note err" hidden></div>
       <div id="paypal-buttons" style="margin-top:14px;min-height:50px"></div></form>
     <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
       <div class="discount"><input id="code" placeholder="Discount code"><button type="button" class="btn" id="applyCode">Apply</button></div>
@@ -338,7 +345,7 @@ function track(params) {
         ${o.tracking_number ? `<p style="margin-top:16px">Tracking number: <b>${esc(o.tracking_number)}</b>${o.tracking_carrier ? ` (${esc(o.tracking_carrier)})` : ""}<br><a style="text-decoration:underline" target="_blank" rel="noopener" href="https://t.17track.net/en#nums=${encodeURIComponent(o.tracking_number)}">Follow your package →</a></p>` : `<p class="muted" style="margin-top:16px">Your tracking number will appear here once the order ships.</p>`}
         ${o.items.map((l) => `<div class="row-between" style="font-size:14px;padding:6px 0;border-top:1px solid var(--line)"><span>${l.qty} × ${esc(l.title)}${l.variant ? " · " + esc(l.variant) : ""}</span><span>${money(l.price * l.qty)}</span></div>`).join("")}
         <div class="row-between" style="font-weight:700;padding-top:8px"><span>Total</span><span>${money(o.total)}</span></div></div>`;
-    } catch (er) { out.innerHTML = `<p class="note" style="background:#ffe4e6;color:#9f1239">${esc(er.message)}</p>`; }
+    } catch (er) { out.innerHTML = `<p class="note err">${esc(er.message)}</p>`; }
   };
 }
 

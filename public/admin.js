@@ -16,13 +16,13 @@ async function api(path, method = "GET", data) {
   if (!r.ok) throw new Error(j.error || "Request failed");
   return j;
 }
-const thumb = (p) => `<div class="pthumb">${p.images?.[0] ? `<img src="${esc(p.images[0])}" alt="">` : `<div style="width:100%;height:100%;background:hsl(${p.hue || 210} 80% 88%)"></div>`}</div>`;
+const thumb = (p) => `<div class="pthumb">${p.images?.[0] ? `<img src="${esc(p.images[0])}" alt="">` : `<div style="width:100%;height:100%;background:radial-gradient(circle at 60% 30%, rgba(47,140,255,.5), #070b18 70%)"></div>`}</div>`;
 const st = (s) => `<span class="st ${s}">${LABEL[s] || s}</span>`;
 const date = (d) => d ? new Date(d.replace(" ", "T") + "Z").toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
 function login() {
   root.innerHTML = `<div class="login"><form class="panel" id="lf" style="width:min(380px,100%)"><div class="logo" style="margin-bottom:6px">Leeys<span>Mall</span></div><p class="muted" style="margin-top:0">Admin sign in</p>
-    <div class="field"><input class="inp" type="password" name="pw" placeholder="Admin password" autofocus required></div><button class="btn block">Sign in</button><p id="le" style="color:#e11d48;font-size:14px"></p></form></div>`;
+    <div class="field"><input class="inp" type="password" name="pw" placeholder="Admin password" autofocus required></div><button class="btn block">Sign in</button><p id="le" style="color:var(--bad);font-size:14px"></p></form></div>`;
   $("#lf").onsubmit = async (e) => {
     e.preventDefault();
     try { await api("/api/admin/login", "POST", { password: e.target.pw.value }); shell(); } catch (er) { $("#le").textContent = er.message; }
@@ -54,8 +54,8 @@ async function dashboard() {
   const margin = s.d30.rev ? Math.round((s.d30.profit / s.d30.rev) * 100) : 0;
   const warn = [!s.config.paypal && "PayPal isn't connected yet — checkout is closed.", !s.config.cj && "CJ API key isn't set — imports and automatic fulfilment are off."].filter(Boolean);
   main().innerHTML = `<h1>Dashboard</h1>
-    ${warn.length ? `<div class="panel" style="background:#fffbeb;border-color:#fde68a">${warn.map((w) => `<div>⚠️ ${w} <a href="#setup" style="text-decoration:underline">Fix in Setup</a></div>`).join("")}</div>` : ""}
-    ${s.action ? `<div class="panel" style="background:#fff1f2;border-color:#fecdd3"><b>${s.action} order${s.action > 1 ? "s" : ""} need${s.action > 1 ? "" : "s"} your attention.</b> <a href="#orders" style="text-decoration:underline">Review orders →</a></div>` : ""}
+    ${warn.length ? `<div class="panel warn">${warn.map((w) => `<div>⚠️ ${w} <a href="#setup" style="text-decoration:underline">Fix in Setup</a></div>`).join("")}</div>` : ""}
+    ${s.action ? `<div class="panel alert"><b>${s.action} order${s.action > 1 ? "s" : ""} need${s.action > 1 ? "" : "s"} your attention.</b> <a href="#orders" style="text-decoration:underline">Review orders →</a></div>` : ""}
     <div class="kpis">
       <div class="kpi"><div class="l">Sales today</div><div class="v">${money(s.today.rev)}</div><div class="s">${s.today.n} orders</div></div>
       <div class="kpi"><div class="l">Sales · 30 days</div><div class="v">${money(s.d30.rev)}</div><div class="s">${s.d30.n} orders</div></div>
@@ -91,7 +91,7 @@ function orderModal(o) {
       <div><b>Ship to</b><p style="margin:6px 0">${esc(a.address1)} ${esc(a.address2 || "")}<br>${esc(a.city)}, ${esc(a.province || "")} ${esc(a.zip)}<br>${esc(a.countryName || o.country)}</p></div></div>
     <table style="margin:10px 0"><tr><th>Item</th><th>Supplier</th><th>Qty</th><th>Price</th><th>Cost</th></tr>${o.items.map((l) => `<tr><td>${esc(l.title)}<div class="muted" style="font-size:12px">${esc(l.variant || "")}</div></td><td>${SUPPLIER[l.supplier] || esc(l.supplier)}</td><td>${l.qty}</td><td>${money(l.price)}</td><td>${money(l.cost)}</td></tr>`).join("")}</table>
     <div class="row-between"><span>Subtotal ${money(o.subtotal)} · Discount −${money(o.discount)} · Shipping ${money(o.shipping)}</span><b>Total ${money(o.total)}</b></div>
-    <div class="row-between" style="margin-top:4px"><span class="muted">Supplier cost ${money(o.cost_total)}</span><b style="color:#059669">Profit ${money(o.total - o.cost_total)}</b></div>
+    <div class="row-between" style="margin-top:4px"><span class="muted">Supplier cost ${money(o.cost_total)}</span><b style="color:var(--good)">Profit ${money(o.total - o.cost_total)}</b></div>
     <div class="muted" style="font-size:13px;margin-top:6px">Supplier orders: ${Object.entries(o.supplier_order_ids || {}).map(([k, v]) => esc(k + ": " + v)).join(", ") || "none yet"}</div>
     <form id="of" class="form-grid" style="margin-top:18px">
       <label>Status<select class="inp" name="status">${STATUSES.map((s) => `<option value="${s}" ${s === o.status ? "selected" : ""}>${LABEL[s]}</option>`).join("")}</select></label>
@@ -116,7 +116,7 @@ async function products() {
     <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Product</th><th>Supplier</th><th>Price</th><th>Cost</th><th>Margin</th><th>Stock</th><th>Status</th></tr>
     ${list.map((p) => { const mg = p.price ? Math.round(((p.price - p.cost) / p.price) * 100) : 0;
       return `<tr class="click" data-p="${p.id}"><td><div class="flex">${thumb(p)}<div><b>${esc(p.title)}</b><div class="muted" style="font-size:12px">${esc(collections.find((c) => c.id === p.collection)?.name || "No collection")}${p.ships === "us" ? " · US warehouse" : ""}</div></div></div></td>
-      <td>${SUPPLIER[p.supplier] || esc(p.supplier)}</td><td>${money(p.price)}</td><td>${money(p.cost)}</td><td style="color:${mg < 30 ? "#e11d48" : "#059669"};font-weight:600">${mg}%</td><td>${p.stock}</td><td>${p.active ? st("delivered").replace("Delivered", "Active") : '<span class="st">Draft</span>'}</td></tr>`; }).join("")}</table></div>`;
+      <td>${SUPPLIER[p.supplier] || esc(p.supplier)}</td><td>${money(p.price)}</td><td>${money(p.cost)}</td><td style="color:${mg < 30 ? "var(--bad)" : "var(--good)"};font-weight:600">${mg}%</td><td>${p.stock}</td><td>${p.active ? st("delivered").replace("Delivered", "Active") : '<span class="st">Draft</span>'}</td></tr>`; }).join("")}</table></div>`;
   main().querySelectorAll("[data-p]").forEach((r) => (r.onclick = () => productModal(list.find((p) => p.id === r.dataset.p))));
   $("#addP").onclick = () => productModal(null);
 }
@@ -178,7 +178,7 @@ async function importCj() {
         try { const p = await api("/api/admin/cj/import", "POST", { pid: b.dataset.pid, markup: mk, collection: f.collection.value }); b.textContent = "Imported ✓"; toast("Added as draft: " + p.title); }
         catch (er) { b.disabled = false; b.textContent = "Import"; toast(er.message); }
       }));
-    } catch (er) { res.innerHTML = `<p style="color:#e11d48">${esc(er.message)}</p>`; }
+    } catch (er) { res.innerHTML = `<p style="color:var(--bad)">${esc(er.message)}</p>`; }
   };
 }
 
@@ -211,7 +211,7 @@ async function setup() {
     ${row(s.config.paypal, "PayPal payments", s.config.paypal ? `Connected (${s.config.paypalEnv === "live" ? "LIVE — real payments" : "sandbox — test payments only"}).` : "Add PAYPAL_CLIENT_ID (in wrangler.jsonc) and the PAYPAL_SECRET secret in Cloudflare → Worker → Settings → Variables and Secrets.")}
     ${row(s.config.cj, "CJ Dropshipping", s.config.cj ? "API key set. Orders are sent to CJ automatically (unpaid — pay them in your CJ dashboard)." : "Add the CJ_API_KEY secret in Cloudflare → Worker → Settings → Variables and Secrets.")}
     </div><div class="panel"><b>Categories</b><form id="cf" class="flex" style="margin-top:10px;flex-wrap:wrap"><input class="inp" name="name" placeholder="Name, e.g. Gaming" style="max-width:240px" required><input class="inp" name="blurb" placeholder="Short description" style="max-width:320px"><button class="btn sm">Add</button></form>
-    <div class="chips" style="margin-top:14px">${collections.map((c) => `<span class="chip">${esc(c.name)} <button data-rmc="${c.id}" title="Remove" style="border:0;background:none;color:#e11d48;font-weight:700;padding:0 0 0 4px">×</button></span>`).join("")}</div>
+    <div class="chips" style="margin-top:14px">${collections.map((c) => `<span class="chip">${esc(c.name)} <button data-rmc="${c.id}" title="Remove" style="border:0;background:none;color:var(--bad);font-weight:700;padding:0 0 0 4px">×</button></span>`).join("")}</div>
     <p class="muted" style="margin-bottom:0;font-size:13px">The first 5 categories show in the top menu; all of them show on the homepage, mobile menu and footer. Removing a category keeps its products (they just become uncategorised).</p></div>`;
   main().querySelectorAll("[data-rmc]").forEach((b) => (b.onclick = async () => { if (!confirm("Remove this category?")) return; await api("/api/admin/collections/" + b.dataset.rmc, "DELETE"); collections = await api("/api/admin/collections"); setup(); }));
   $("#cf").onsubmit = async (e) => { e.preventDefault(); try { await api("/api/admin/collections", "POST", { name: e.target.name.value, blurb: e.target.blurb.value }); collections = await api("/api/admin/collections"); toast("Collection added"); setup(); } catch (er) { toast(er.message); } };
