@@ -358,6 +358,47 @@ details.acc p { color: var(--ink-2); margin: 10px 0 0; font-size: 15px; }
 .seo-snapshot { min-height: 60vh; }
 .seo-snapshot img { display: inline-block; width: 160px; height: 160px; object-fit: contain; border-radius: 14px; background: #070b18; margin: 6px 6px 0 0; }
 .seo-snapshot a { color: var(--blue-2); }
+/* Live chat */
+.chat-fab { position: fixed; right: 20px; bottom: 20px; z-index: 84; width: 58px; height: 58px; border-radius: 50%; border: 1px solid rgba(160,210,255,.5); color: #fff;
+  display: grid; place-items: center; background: linear-gradient(135deg, #5cb2ff, #2f8cff 45%, #1557d6); box-shadow: 0 12px 30px rgba(47,140,255,.5), inset 0 1px 0 rgba(255,255,255,.35);
+  transition: transform .2s, bottom .3s; }
+.chat-fab:hover { transform: scale(1.06); }
+.chat-fab svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.chat-fab.on svg { transform: scale(.9); }
+.chat-dot { position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; border-radius: 50%; background: #ff5c7a; border: 2px solid #04060d; }
+.install-pill:not([hidden]) ~ .chat-fab { bottom: 104px; }
+.chat-panel { position: fixed; right: 20px; bottom: 90px; z-index: 86; width: min(380px, calc(100vw - 24px)); height: min(560px, calc(100vh - 120px)); display: flex; flex-direction: column;
+  border-radius: 22px; overflow: hidden; background: rgba(8,13,28,.94); border: 1px solid rgba(92,178,255,.35);
+  box-shadow: 0 30px 70px rgba(0,0,0,.65), 0 0 50px rgba(47,140,255,.25); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); animation: pillIn .35s ease; }
+.install-pill:not([hidden]) ~ .chat-panel { bottom: 174px; height: min(500px, calc(100vh - 200px)); }
+.chat-panel header { display: flex; align-items: center; gap: 12px; padding: 14px 12px 14px 16px; border-bottom: 1px solid var(--line);
+  background: radial-gradient(300px 120px at 20% 0%, rgba(47,140,255,.3), transparent 70%); }
+.chat-panel header > div:nth-child(2) { flex: 1; display: grid; font-size: 12.5px; color: var(--ink-2); }
+.chat-panel header b { color: #fff; font-size: 15px; }
+.chat-panel header i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); margin-right: 4px; }
+.chat-av { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-family: var(--head); font-weight: 700; color: #fff;
+  background: radial-gradient(circle at 75% 15%, #1b4fd1, #0a1433 60%, #04060d); border: 1px solid rgba(92,178,255,.45); }
+.chat-log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 82%; display: grid; gap: 3px; }
+.msg p { margin: 0; padding: 10px 14px; border-radius: 16px; font-size: 14.5px; line-height: 1.45; word-wrap: break-word; }
+.msg time { font-size: 11px; color: var(--muted); padding: 0 6px; }
+.msg.admin { align-self: flex-start; }
+.msg.admin p { background: rgba(255,255,255,.07); border: 1px solid var(--line); border-bottom-left-radius: 5px; color: var(--ink); }
+.msg.customer { align-self: flex-end; text-align: right; }
+.msg.customer p { background: linear-gradient(135deg, #3f97ff, #1557d6); color: #fff; border-bottom-right-radius: 5px; text-align: left; }
+.chat-who { display: grid; gap: 6px; padding: 10px 12px 0; }
+.chat-who input, .chat-send textarea { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(10,16,34,.8); color: var(--ink); font-size: 14px; }
+.chat-who input:focus, .chat-send textarea:focus { outline: none; border-color: var(--blue); }
+.chat-send { display: flex; gap: 8px; padding: 10px 12px 12px; align-items: flex-end; }
+.chat-send textarea { resize: none; max-height: 120px; font-family: inherit; }
+.chat-send .btn { width: 44px; height: 44px; padding: 0; border-radius: 50%; flex: none; }
+.chat-send .btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+@media (max-width: 480px) {
+  .chat-fab { right: 14px; bottom: 14px; width: 54px; height: 54px; }
+  .chat-panel { right: 0; left: 0; bottom: 0; width: 100%; height: 100%; max-height: 100dvh; border-radius: 0; }
+  .install-pill:not([hidden]) ~ .chat-panel { bottom: 0; height: 100%; }
+  .chat-panel:not([hidden]) ~ * { visibility: visible; }
+}
 .toast:empty { visibility: hidden; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 160%); color: #fff; padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 500; z-index: 90; transition: transform .25s;
   background: rgba(14,21,42,.9); border: 1px solid rgba(92,178,255,.4); box-shadow: 0 0 24px rgba(47,140,255,.4); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }

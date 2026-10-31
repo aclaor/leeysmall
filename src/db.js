@@ -22,6 +22,11 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS discounts (code TEXT PRIMARY KEY, percent REAL NOT NULL, active INTEGER DEFAULT 1, uses INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
   `CREATE TABLE IF NOT EXISTS subscribers (email TEXT PRIMARY KEY, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, token TEXT NOT NULL, name TEXT, email TEXT, page TEXT, status TEXT DEFAULT 'open',
+    unread_admin INTEGER DEFAULT 0, unread_customer INTEGER DEFAULT 0, last_body TEXT, last_from TEXT, last_at TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_chat_msgs ON chat_messages(chat_id, id)`,
+  `CREATE INDEX IF NOT EXISTS idx_chats_last ON chats(last_at)`,
 ];
 
 let ready = null;

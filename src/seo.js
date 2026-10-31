@@ -100,7 +100,9 @@ export async function renderPage(req, env) {
   const url = new URL(req.url), base = siteUrl(env, req);
   await ensureSchema(env);
   const pg = await pageFor(env, url, base);
-  const shell = await env.ASSETS.fetch(new Request(new URL("/", req.url), { headers: req.headers }));
+  // Always fetch the full page template (never pass the browser's "has it changed?" headers, which would return an empty 304)
+  const shell = await env.ASSETS.fetch(new Request(new URL("/", req.url), { headers: { accept: "text/html" } }));
+  if (shell.status !== 200) throw new Error("shell " + shell.status);
   const setAttr = (attr, val) => ({ element(el) { val == null ? el.remove() : el.setAttribute(attr, val); } });
   const head = [
     pg.noindex ? `<meta name="robots" content="noindex, follow">` : `<meta name="robots" content="index, follow, max-image-preview:large">`,

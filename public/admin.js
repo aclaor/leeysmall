@@ -31,18 +31,19 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["products", "Products"], ["import", "Import from CJ"], ["discounts", "Discounts"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["discounts", "Discounts"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
   try { collections = await api("/api/admin/collections"); } catch { return; }
+  refreshChatBadge();
   show(tab);
 }
 window.addEventListener("hashchange", () => { const t = location.hash.slice(1); if (t && $("#main")) show(t); });
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, orders, products, import: importCj, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, orders, messages, products, import: importCj, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
 
@@ -108,6 +109,60 @@ function orderModal(o) {
   const rf = $("#refulfil", m);
   if (rf) rf.onclick = async () => { rf.disabled = true; try { const r = await api(`/api/admin/orders/${o.id}/fulfil`, "POST"); m.remove(); toast("Status: " + (LABEL[r.status] || r.status)); orders(); } catch (er) { toast(er.message); rf.disabled = false; } };
 }
+
+/* ---------- Messages (live chat) ---------- */
+let chatState = { status: "open", openId: null, timer: null, lastCount: -1 };
+async function refreshChatBadge() {
+  try {
+    const r = await api("/api/admin/chats/unread");
+    const b = $("#badge-messages"); if (b) b.innerHTML = r.n ? `<span class="pill">${r.n}</span>` : "";
+    document.title = (r.n ? `(${r.n}) ` : "") + "LeeysPremium Admin";
+    if (chatState.lastCount >= 0 && r.n > chatState.lastCount) { toast("💬 New chat message"); if (tab === "messages") messages(true); }
+    chatState.lastCount = r.n;
+  } catch {}
+}
+setInterval(() => { if ($("#main")) refreshChatBadge(); }, 15000);
+
+async function messages(keepOpen) {
+  const cs = chatState;
+  const list = await api("/api/admin/chats?status=" + cs.status);
+  main().innerHTML = `<h1>Messages</h1><div class="chips" style="margin-bottom:14px">${[["open", "Open"], ["closed", "Closed"]].map(([v, t]) => `<button class="chip ${cs.status === v ? "on" : ""}" data-cst="${v}">${t}</button>`).join("")}</div>
+    <div class="chat-admin"><div class="panel chat-list" style="padding:6px">${list.length ? list.map((c) => `<button class="chat-row ${c.id === cs.openId ? "on" : ""}" data-chat="${c.id}">
+        <div class="row-between"><b>${esc(c.name || c.email || "Visitor " + c.id.slice(-4))}</b><span class="muted" style="font-size:12px">${date(c.last_at)}</span></div>
+        <div class="row-between" style="gap:8px"><span class="muted" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.last_from === "admin" ? "You: " : ""}${esc(c.last_body || "")}</span>${c.unread_admin ? `<span class="pill">${c.unread_admin}</span>` : ""}</div></button>`).join("")
+      : `<p class="muted" style="padding:14px">${cs.status === "open" ? "No open chats. When a customer messages you from the store, it shows up here." : "No closed chats."}</p>`}</div>
+      <div class="panel chat-view" id="chatView"><p class="muted">Select a conversation.</p></div></div>`;
+  main().querySelectorAll("[data-cst]").forEach((b) => (b.onclick = () => { cs.status = b.dataset.cst; cs.openId = null; messages(); }));
+  main().querySelectorAll("[data-chat]").forEach((b) => (b.onclick = () => { cs.openId = b.dataset.chat; main().querySelectorAll("[data-chat]").forEach((x) => x.classList.toggle("on", x === b)); openChat(cs.openId); }));
+  if (cs.openId && list.some((c) => c.id === cs.openId)) openChat(cs.openId, keepOpen);
+  refreshChatBadge();
+}
+async function openChat(id, keepDraft) {
+  const view = $("#chatView"); if (!view) return;
+  const draft = keepDraft ? ($("#replyBox")?.value || "") : "";
+  const d = await api("/api/admin/chats/" + id), c = d.chat;
+  view.innerHTML = `<div class="row-between" style="gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:12px">
+      <div><b style="font-size:16px">${esc(c.name || "Visitor")}</b><div class="muted" style="font-size:13px">${c.email ? `<a href="mailto:${esc(c.email)}" style="color:var(--blue-2)">${esc(c.email)}</a>` : "No email given"} · started ${date(c.created_at)}${c.page ? ` · on <a href="${esc(c.page)}" target="_blank" style="color:var(--blue-2)">${esc(c.page)}</a>` : ""}</div></div>
+      <div class="flex" style="gap:6px"><button class="btn sm ghost" id="chatToggle">${c.status === "open" ? "Mark resolved" : "Reopen"}</button><button class="btn sm ghost" id="chatDel">Delete</button></div></div>
+    ${d.orders.length ? `<div class="muted" style="font-size:13px;padding:10px 0;border-bottom:1px solid var(--line)">Orders from this email: ${d.orders.map((o) => `<a href="#orders" style="color:var(--blue-2)">#${esc(o.id)}</a> ${money(o.total)} (${LABEL[o.status] || o.status})`).join(" · ")}</div>` : ""}
+    <div class="chat-thread" id="thread">${d.messages.map((m) => `<div class="msg ${m.sender === "admin" ? "me" : "them"}"><p>${esc(m.body).replace(/\n/g, "<br>")}</p><time>${date(m.created_at)}</time></div>`).join("")}</div>
+    <form id="replyForm" class="chat-reply"><textarea class="inp" id="replyBox" rows="2" placeholder="Write a reply… (Enter to send, Shift+Enter for a new line)">${esc(draft)}</textarea><button class="btn accent">Send</button></form>
+    ${c.email ? "" : `<p class="muted" style="font-size:12px;margin:6px 0 0">They see your reply while the store is open in their browser. They didn't leave an email, so ask for one if you need to follow up later.</p>`}`;
+  const th = $("#thread"); th.scrollTop = th.scrollHeight;
+  const box = $("#replyBox");
+  box.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#replyForm").requestSubmit(); } };
+  $("#replyForm").onsubmit = async (e) => {
+    e.preventDefault(); const text = box.value.trim(); if (!text) return;
+    try { await api("/api/admin/chats/" + id, "POST", { body: text }); box.value = ""; openChat(id); messagesListOnly(); } catch (er) { toast(er.message); }
+  };
+  $("#chatToggle").onclick = async () => { await api("/api/admin/chats/" + id, "PATCH", { status: c.status === "open" ? "closed" : "open" }); chatState.openId = null; messages(); };
+  $("#chatDel").onclick = async () => { if (!confirm("Delete this conversation permanently?")) return; await api("/api/admin/chats/" + id, "DELETE"); chatState.openId = null; messages(); };
+  if (!keepDraft) box.focus();
+  refreshChatBadge();
+}
+async function messagesListOnly() { if (tab === "messages") { const keep = $("#replyBox")?.value; await messages(true); if (keep && $("#replyBox")) $("#replyBox").value = keep; } }
+// Refresh the open conversation while the Messages tab is visible
+setInterval(() => { if (tab === "messages" && chatState.openId && document.visibilityState === "visible" && $("#chatView")) messagesListOnly(); }, 6000);
 
 /* ---------- Products ---------- */
 const pState = { q: "", status: "", cat: "", supplier: "", selected: new Set() };

@@ -77,6 +77,23 @@
     .bars div span { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--muted); white-space: nowrap; }
     pre.notes { white-space: pre-wrap; background: rgba(245,196,81,.08); border: 1px solid rgba(245,196,81,.25); color: #f7d98a; border-radius: 12px; padding: 12px; font-size: 13px; margin: 0; font-family: inherit; }
     a[style*="underline"] { color: var(--blue-2); }
+    .chat-admin { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+    .chat-list { max-height: 70vh; overflow-y: auto; }
+    .chat-row { width: 100%; text-align: left; background: none; border: 0; border-radius: 12px; padding: 12px; display: grid; gap: 4px; color: var(--ink); }
+    .chat-row:hover { background: rgba(255,255,255,.05); }
+    .chat-row.on { background: rgba(47,140,255,.16); box-shadow: inset 0 0 0 1px rgba(92,178,255,.35); }
+    .chat-row .pill { background: linear-gradient(135deg, #ff8aa3, #e11d48); color: #fff; border-radius: 9px; font-size: 11px; padding: 1px 7px; flex: none; }
+    .chat-view { min-height: 60vh; display: flex; flex-direction: column; }
+    .chat-thread { flex: 1; overflow-y: auto; max-height: 52vh; padding: 14px 4px; display: flex; flex-direction: column; gap: 10px; }
+    .chat-thread .msg { max-width: 78%; display: grid; gap: 3px; }
+    .chat-thread .msg p { margin: 0; padding: 10px 14px; border-radius: 16px; font-size: 14.5px; line-height: 1.45; word-wrap: break-word; }
+    .chat-thread .msg time { font-size: 11px; color: var(--muted); padding: 0 6px; }
+    .chat-thread .them { align-self: flex-start; }
+    .chat-thread .them p { background: rgba(255,255,255,.07); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+    .chat-thread .me { align-self: flex-end; text-align: right; }
+    .chat-thread .me p { background: linear-gradient(135deg, #3f97ff, #1557d6); color: #fff; border-bottom-right-radius: 5px; text-align: left; }
+    .chat-reply { display: flex; gap: 10px; align-items: flex-end; border-top: 1px solid var(--line); padding-top: 12px; }
+    .chat-reply textarea { resize: vertical; min-height: 48px; }
     @media (max-width: 900px) {
       .adm { grid-template-columns: 1fr; }
       .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 12px; }
@@ -84,6 +101,7 @@
       .side .bottom { margin: 0; }
       .main { padding: 20px 16px 60px; }
       .kpis, .cj-grid { grid-template-columns: repeat(2, 1fr); }
+      .chat-admin { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr; }
     }
   </style>

@@ -152,6 +152,39 @@ async function handle(req, env, ctx) {
     const r = await env.DB.prepare("SELECT * FROM products WHERE id=? AND active=1").bind(p[1]).first();
     return r ? json(toPublic(r)) : bad("Not found", 404);
   }
+  /* ---------- live chat (customer side) ---------- */
+  if (path === "/api/chat/send" && m === "POST") {
+    const b = await body(req);
+    const text = str(b.body, 2000);
+    if (!text) return bad("Type a message first");
+    let c = b.id ? await env.DB.prepare("SELECT * FROM chats WHERE id=? AND token=?").bind(str(b.id, 40), str(b.token, 80)).first() : null;
+    const email = str(b.email, 200).toLowerCase(), name = str(b.name, 80);
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad("Please check your email address");
+    if (!c) {
+      const id = "c" + Date.now().toString(36) + [...crypto.getRandomValues(new Uint8Array(3))].map((x) => x.toString(16).padStart(2, "0")).join("");
+      const token = [...crypto.getRandomValues(new Uint8Array(24))].map((x) => x.toString(16).padStart(2, "0")).join("");
+      await env.DB.prepare("INSERT INTO chats (id, token, name, email, page) VALUES (?,?,?,?,?)").bind(id, token, name || null, email || null, str(b.page, 300)).run();
+      c = { id, token };
+    } else {
+      const recent = await env.DB.prepare("SELECT COUNT(*) n FROM chat_messages WHERE chat_id=? AND sender='customer' AND created_at > datetime('now','-1 minute')").bind(c.id).first();
+      if (recent.n >= 8) return bad("You're sending messages very quickly — please wait a moment", 429);
+      if (email || name) await env.DB.prepare("UPDATE chats SET email=COALESCE(?, email), name=COALESCE(?, name) WHERE id=?").bind(email || null, name || null, c.id).run();
+    }
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO chat_messages (chat_id, sender, body) VALUES (?, 'customer', ?)").bind(c.id, text),
+      env.DB.prepare("UPDATE chats SET status='open', unread_admin=unread_admin+1, last_body=?, last_from='customer', last_at=datetime('now'), page=COALESCE(?, page) WHERE id=?").bind(text.slice(0, 200), str(b.page, 300) || null, c.id),
+    ]);
+    const msgs = (await env.DB.prepare("SELECT id, sender, body, created_at FROM chat_messages WHERE chat_id=? ORDER BY id").bind(c.id).all()).results;
+    return json({ id: c.id, token: c.token, messages: msgs });
+  }
+  if (path === "/api/chat/poll") {
+    const c = await env.DB.prepare("SELECT id, unread_customer FROM chats WHERE id=? AND token=?").bind(str(url.searchParams.get("id"), 40), str(url.searchParams.get("token"), 80)).first();
+    if (!c) return bad("Chat not found", 404);
+    const after = parseInt(url.searchParams.get("after")) || 0;
+    const msgs = (await env.DB.prepare("SELECT id, sender, body, created_at FROM chat_messages WHERE chat_id=? AND id>? ORDER BY id LIMIT 200").bind(c.id, after).all()).results;
+    if (url.searchParams.get("seen") === "1" && c.unread_customer) await env.DB.prepare("UPDATE chats SET unread_customer=0 WHERE id=?").bind(c.id).run();
+    return json({ messages: msgs, unread: c.unread_customer });
+  }
   if (path === "/api/subscribe" && m === "POST") {
     const e = str((await body(req)).email, 200).toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return bad("Invalid email");
@@ -409,6 +442,43 @@ async function admin(req, env, ctx, path, m, url) {
   }
   if (path === "/api/admin/sync" && m === "POST") {
     try { const r = await syncProducts(env, 10); ctx.waitUntil(syncTracking(env)); return json(r); } catch (e) { return bad(e.message, 502); }
+  }
+  /* ---------- live chat (admin side) ---------- */
+  if (path === "/api/admin/chats/unread") {
+    const r = await env.DB.prepare("SELECT COALESCE(SUM(unread_admin),0) n, COUNT(CASE WHEN unread_admin>0 THEN 1 END) chats FROM chats").first();
+    return json(r);
+  }
+  if (path === "/api/admin/chats" && m === "GET") {
+    const st = url.searchParams.get("status") || "open";
+    return json((await env.DB.prepare("SELECT id, name, email, page, status, unread_admin, last_body, last_from, last_at, created_at FROM chats WHERE status=? ORDER BY last_at DESC LIMIT 200").bind(st).all()).results);
+  }
+  if ((p = path.match(/^\/api\/admin\/chats\/([\w-]+)$/))) {
+    const c = await env.DB.prepare("SELECT id, name, email, page, status, created_at FROM chats WHERE id=?").bind(p[1]).first();
+    if (!c) return bad("Chat not found", 404);
+    if (m === "GET") {
+      await env.DB.prepare("UPDATE chats SET unread_admin=0 WHERE id=?").bind(c.id).run();
+      const msgs = (await env.DB.prepare("SELECT id, sender, body, created_at FROM chat_messages WHERE chat_id=? ORDER BY id").bind(c.id).all()).results;
+      const orders = c.email ? (await env.DB.prepare("SELECT id, status, total, created_at FROM orders WHERE email=? AND status!='pending' ORDER BY created_at DESC LIMIT 10").bind(c.email).all()).results : [];
+      return json({ chat: c, messages: msgs, orders });
+    }
+    if (m === "POST") {
+      const text = str((await body(req)).body, 4000);
+      if (!text) return bad("Type a reply first");
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO chat_messages (chat_id, sender, body) VALUES (?, 'admin', ?)").bind(c.id, text),
+        env.DB.prepare("UPDATE chats SET unread_customer=unread_customer+1, unread_admin=0, last_body=?, last_from='admin', last_at=datetime('now'), status='open' WHERE id=?").bind(text.slice(0, 200), c.id),
+      ]);
+      return json({ ok: true });
+    }
+    if (m === "PATCH") {
+      const s2 = (await body(req)).status === "closed" ? "closed" : "open";
+      await env.DB.prepare("UPDATE chats SET status=?, unread_admin=0 WHERE id=?").bind(s2, c.id).run();
+      return json({ ok: true });
+    }
+    if (m === "DELETE") {
+      await env.DB.batch([env.DB.prepare("DELETE FROM chat_messages WHERE chat_id=?").bind(c.id), env.DB.prepare("DELETE FROM chats WHERE id=?").bind(c.id)]);
+      return json({ ok: true });
+    }
   }
   if (path === "/api/admin/subscribers") return json((await env.DB.prepare("SELECT * FROM subscribers ORDER BY created_at DESC").all()).results);
   return bad("Not found", 404);

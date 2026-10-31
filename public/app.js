@@ -425,7 +425,7 @@ function account() {
 const PAGES = {
   shipping: ["Shipping", `<p>We ship to the United States and worldwide.</p><ul><li><b>United States:</b> 3–7 business days for items in our US warehouses; 8–15 days for other items.</li><li><b>Canada, UK, Australia:</b> 7–14 business days.</li><li><b>Rest of world:</b> 10–20 business days.</li></ul><p>Every order includes tracking. US orders over $${FREE_SHIP} ship free.</p>`],
   returns: ["Returns & refunds", `<p>You can return most items within 30 days of delivery. Items must be unused and in original packaging. Damaged or faulty items are replaced or refunded at no cost to you — just email us a photo.</p><p>Refunds go back to your original payment method within 5–10 business days of approval.</p>`],
-  contact: ["Contact us", `<p>Questions about an order? Email <b>support@leeyspremium.com</b> and we'll reply within 24 hours, Monday to Saturday.</p>`],
+  contact: ["Contact us", `<p>Questions about an order? Email <b>support@leeyspremium.com</b> and we'll reply within 24 hours, Monday to Saturday.</p><p>Or chat with us right now:</p><button class="btn accent" onclick="openChat()">Start a chat</button>`],
   privacy: ["Privacy policy", `<p>We collect only what's needed to process your order: your name, contact details, shipping address and order history. Payments are processed by our payment providers; we never store card numbers. We share your shipping details only with the supplier fulfilling your order and the carrier delivering it.</p>`],
   terms: ["Terms of service", `<p>By using LeeysPremium you agree to these terms. Prices are in USD. We may cancel an order if an item becomes unavailable, in which case you receive a full refund.</p>`],
 };
@@ -506,5 +506,75 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
   if (isIOS && /safari/i.test(navigator.userAgent) && !/crios|fxios/i.test(navigator.userAgent)) { icon.hidden = false; if (!snoozed()) setTimeout(() => { pill.hidden = false; $("#installHint").innerHTML = "Tap <b>Share</b> then <b>Add to Home Screen</b>."; $("#installBtn").hidden = true; }, 6000); }
   $("#installBtn").onclick = install; icon.onclick = install;
   $("#installClose").onclick = () => { pill.hidden = true; snooze(7); };
+})();
+
+/* ---------- Live chat widget ---------- */
+(function chat() {
+  const KEY = "lp_chat";
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+  const save = (v) => { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch {} };
+  let st = load(), msgs = [], open = false, timer = null, lastId = 0, sending = false;
+  const fab = document.createElement("button");
+  fab.className = "chat-fab"; fab.setAttribute("aria-label", "Chat with us");
+  fab.innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="chat-dot" hidden></span>`;
+  const panel = document.createElement("section");
+  panel.className = "chat-panel"; panel.hidden = true; panel.setAttribute("aria-label", "Chat");
+  panel.innerHTML = `<header><div class="chat-av">LP</div><div><b>LeeysPremium support</b><span><i></i> We usually reply within a few hours</span></div>
+      <button class="icon-btn" data-chat-close aria-label="Close chat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+    <div class="chat-log" role="log" aria-live="polite"></div>
+    <form class="chat-who" ${st.email ? "hidden" : ""}><input name="name" placeholder="Your name (optional)" autocomplete="name" maxlength="80">
+      <input name="email" type="email" placeholder="Email — so we can reply if you leave" autocomplete="email" maxlength="200"></form>
+    <form class="chat-send"><textarea name="body" rows="1" placeholder="Type your message…" maxlength="2000" required></textarea>
+      <button class="btn accent" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7z"/></svg></button></form>`;
+  document.body.append(fab, panel);
+  const log = panel.querySelector(".chat-log"), form = panel.querySelector(".chat-send"), who = panel.querySelector(".chat-who"), dot = fab.querySelector(".chat-dot");
+  const time = (t) => { const d = t ? new Date(t.replace(" ", "T") + "Z") : new Date(); return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); };
+  const render = () => {
+    const greet = `<div class="msg admin"><p>Hi! 👋 Ask us anything about products, shipping or your order.</p></div>`;
+    log.innerHTML = greet + msgs.map((m) => `<div class="msg ${m.sender}"><p>${esc(m.body).replace(/\n/g, "<br>")}</p><time>${time(m.created_at)}</time></div>`).join("");
+    log.scrollTop = log.scrollHeight;
+  };
+  const poll = async (seen) => {
+    if (!st.id) return;
+    try {
+      const r = await fetch(`/api/chat/poll?id=${encodeURIComponent(st.id)}&token=${encodeURIComponent(st.token)}&after=${lastId}&seen=${seen ? 1 : 0}`);
+      if (r.status === 404) { st = {}; save(st); msgs = []; return; }
+      const d = await r.json();
+      if (d.messages?.length) { msgs.push(...d.messages); lastId = msgs[msgs.length - 1].id; if (open) render(); }
+      dot.hidden = open || !d.unread;
+    } catch {}
+  };
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(async () => { await poll(open); schedule(); }, open ? 4000 : 30000); };
+  const show = async (v) => {
+    open = v; panel.hidden = !v; fab.classList.toggle("on", v); dot.hidden = true;
+    if (v) { render(); await poll(true); render(); setTimeout(() => form.body.focus(), 50); }
+    schedule();
+  };
+  fab.onclick = () => show(!open);
+  panel.querySelector("[data-chat-close]").onclick = () => show(false);
+  form.body.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+  form.body.addEventListener("input", () => { form.body.style.height = "auto"; form.body.style.height = Math.min(120, form.body.scrollHeight) + "px"; });
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const text = form.body.value.trim();
+    if (!text || sending) return;
+    const email = who.email.value.trim();
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast("Please check your email address"); who.email.focus(); return; }
+    sending = true; form.querySelector("button").disabled = true;
+    try {
+      const r = await fetch("/api/chat/send", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: st.id, token: st.token, body: text, name: who.name.value.trim(), email, page: location.pathname }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Message not sent");
+      st = { id: d.id, token: d.token, email: email || st.email }; save(st);
+      msgs = d.messages; lastId = msgs.length ? msgs[msgs.length - 1].id : 0;
+      form.body.value = ""; form.body.style.height = "auto";
+      if (email) who.hidden = true;
+      render(); schedule();
+    } catch (er) { toast(er.message); }
+    sending = false; form.querySelector("button").disabled = false;
+  };
+  window.openChat = () => show(true);
+  if (st.id) { poll(false).then(schedule); }
 })();
 
