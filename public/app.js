@@ -485,3 +485,26 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
   $("#footerCollections").innerHTML = links;
   updateCount(); route();
 })();
+
+/* ---------- Installable app (PWA) ---------- */
+(function pwa() {
+  if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  if (standalone) return;
+  const pill = $("#installPill"), icon = $("#installIcon");
+  const snoozed = () => { try { return Date.now() < Number(localStorage.getItem("lp_install_snooze") || 0); } catch { return false; } };
+  const snooze = (days) => { try { localStorage.setItem("lp_install_snooze", String(Date.now() + days * 864e5)); } catch {} };
+  let deferred = null;
+  const show = () => { icon.hidden = false; if (!snoozed()) setTimeout(() => (pill.hidden = false), 4000); };
+  const install = async () => {
+    if (deferred) { deferred.prompt(); const r = await deferred.userChoice; deferred = null; pill.hidden = true; if (r.outcome === "accepted") { icon.hidden = true; toast("Installing LeeysPremium…"); } }
+    else if (isIOS) { pill.hidden = false; $("#installHint").innerHTML = "Tap <b>Share</b> <span aria-hidden='true'>⎋</span> then <b>Add to Home Screen</b>."; $("#installBtn").hidden = true; }
+  };
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferred = e; show(); });
+  window.addEventListener("appinstalled", () => { pill.hidden = true; icon.hidden = true; toast("LeeysPremium app installed 🎉"); });
+  if (isIOS && /safari/i.test(navigator.userAgent) && !/crios|fxios/i.test(navigator.userAgent)) { icon.hidden = false; if (!snoozed()) setTimeout(() => { pill.hidden = false; $("#installHint").innerHTML = "Tap <b>Share</b> then <b>Add to Home Screen</b>."; $("#installBtn").hidden = true; }, 6000); }
+  $("#installBtn").onclick = install; icon.onclick = install;
+  $("#installClose").onclick = () => { pill.hidden = true; snooze(7); };
+})();
+

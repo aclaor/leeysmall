@@ -19,6 +19,11 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="LeeysPremium">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
   <div class="announce" id="announce">Free US shipping on orders over $49 · 30-day easy returns</div>
@@ -33,6 +38,9 @@
       <div class="header-actions">
         <button class="icon-btn" id="searchBtn" aria-label="Search">
           <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </button>
+        <button class="icon-btn" id="installIcon" aria-label="Install app" title="Install the app" hidden>
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
         </button>
         <a href="/account" class="icon-btn" data-link aria-label="Account">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
@@ -80,6 +88,12 @@
 
   <div class="overlay" id="overlay" hidden></div>
   <aside class="drawer" id="drawer" aria-label="Cart" hidden></aside>
+  <div class="install-pill" id="installPill" hidden>
+    <img src="/icons/icon-192.png" alt="" width="40" height="40">
+    <div><b>Get the LeeysPremium app</b><span id="installHint">Faster shopping, one tap from your home screen.</span></div>
+    <button class="btn accent" id="installBtn">Install</button>
+    <button class="icon-btn" id="installClose" aria-label="Not now"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
   <div class="toast" id="toast"></div>
 
   <script src="/app.js" type="module"></script>
