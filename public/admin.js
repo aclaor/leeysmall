@@ -204,7 +204,7 @@ async function subscribers() {
 
 /* ---------- Setup ---------- */
 async function setup() {
-  const s = await api("/api/admin/stats");
+  const [s, prods] = await Promise.all([api("/api/admin/stats"), api("/api/admin/products")]);
   const row = (ok, t, d) => `<div><span class="dot ${ok ? "ok" : ""}"></span><div><b>${t}</b><div class="muted" style="font-size:13px">${d}</div></div></div>`;
   main().innerHTML = `<h1>Setup</h1><div class="panel check">
     ${row(true, "Database", "Connected and ready.")}
@@ -213,6 +213,21 @@ async function setup() {
     </div><div class="panel"><b>Categories</b><form id="cf" class="flex" style="margin-top:10px;flex-wrap:wrap"><input class="inp" name="name" placeholder="Name, e.g. Gaming" style="max-width:240px" required><input class="inp" name="blurb" placeholder="Short description" style="max-width:320px"><button class="btn sm">Add</button></form>
     <div class="chips" style="margin-top:14px">${collections.map((c) => `<span class="chip">${esc(c.name)} <button data-rmc="${c.id}" title="Remove" style="border:0;background:none;color:var(--bad);font-weight:700;padding:0 0 0 4px">×</button></span>`).join("")}</div>
     <p class="muted" style="margin-bottom:0;font-size:13px">The first 5 categories show in the top menu; all of them show on the homepage, mobile menu and footer. Removing a category keeps its products (they just become uncategorised).</p></div>`;
+  main().insertAdjacentHTML("beforeend", `<div class="panel"><b>Category images</b><p class="muted" style="margin:6px 0 14px;font-size:13px">Pick which product's photo shows on each category tile on the homepage. “Automatic” uses the first product in that category that has a photo.</p>
+    <div class="tbl-wrap"><table><tr><th>Category</th><th>Image</th><th>Product shown</th></tr>${collections.map((c) => {
+      const inCat = prods.filter((p) => p.collection === c.id && p.active);
+      const auto = inCat.find((p) => p.images?.length) || inCat[0];
+      const cur = prods.find((p) => p.id === c.cover) || auto;
+      return `<tr><td><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${inCat.length} products</div></td><td>${cur ? thumb(cur) : '<div class="pthumb"></div>'}</td>
+        <td><select class="inp" data-cover="${c.id}" style="max-width:420px"><option value="">Automatic${auto ? " (" + esc(auto.title.slice(0, 50)) + ")" : " (no products yet)"}</option>
+        ${(() => { const opt = (p) => `<option value="${p.id}" ${p.id === c.cover ? "selected" : ""}>${esc(p.title.slice(0, 70))}${p.images?.length ? "" : " (no photo)"}</option>`;
+          const others = prods.filter((p) => p.collection !== c.id && p.active);
+          return (inCat.length ? `<optgroup label="In ${esc(c.name)}">${inCat.map(opt).join("")}</optgroup>` : "") + (others.length ? `<optgroup label="Other products">${others.map(opt).join("")}</optgroup>` : ""); })()}</select></td></tr>`;
+    }).join("")}</table></div></div>`);
+  main().querySelectorAll("[data-cover]").forEach((sel) => (sel.onchange = async () => {
+    try { await api("/api/admin/collections/" + sel.dataset.cover, "PATCH", { cover: sel.value }); collections = await api("/api/admin/collections"); toast("Category image updated"); setup(); }
+    catch (er) { toast(er.message); }
+  }));
   main().querySelectorAll("[data-rmc]").forEach((b) => (b.onclick = async () => { if (!confirm("Remove this category?")) return; await api("/api/admin/collections/" + b.dataset.rmc, "DELETE"); collections = await api("/api/admin/collections"); setup(); }));
   $("#cf").onsubmit = async (e) => { e.preventDefault(); try { await api("/api/admin/collections", "POST", { name: e.target.name.value, blurb: e.target.blurb.value }); collections = await api("/api/admin/collections"); toast("Collection added"); setup(); } catch (er) { toast(er.message); } };
 }

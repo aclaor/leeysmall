@@ -31,6 +31,7 @@ export function ensureSchema(env) {
     const { n } = await env.DB.prepare("SELECT COUNT(*) n FROM products").first();
     if (n === 0) await seed(env);
     await migrateToGeneralStore(env);
+    try { await env.DB.prepare("ALTER TABLE collections ADD COLUMN cover TEXT").run(); } catch {} // already added
   })().catch((e) => { ready = null; throw e; });
   return ready;
 }

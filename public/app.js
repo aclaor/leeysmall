@@ -53,7 +53,12 @@ function art(p, variant = 0) {
   </svg>`;
 }
 const COLL_LOOK = { electronics: [210, "buds"], "home-kitchen": [25, "home"], fashion: [330, "shirt"], "beauty-health": [300, "heart"], "sports-outdoors": [140, "ball"], "toys-kids": [45, "toy"], pets: [15, "paw"], automotive: [0, "car"] };
-const collArt = (c) => { const lk = COLL_LOOK[c.id], p = PRODUCTS.find((x) => x.collection === c.id);
+const coverProduct = (c) => {
+  const inCat = PRODUCTS.filter((x) => x.collection === c.id);
+  return (c.cover && PRODUCTS.find((x) => x.id === c.cover)) || inCat.find((x) => x.images?.length) || inCat[0];
+};
+const collArt = (c) => { const lk = COLL_LOOK[c.id], p = coverProduct(c);
+  if (p?.images?.length) return art(p);
   return art({ id: "c-" + c.id, title: c.name, hue: lk?.[0] ?? p?.hue ?? (c.id.length * 47) % 360, icon: lk?.[1] ?? p?.icon ?? "bag" }); };
 
 /* ---------- Cart ---------- */

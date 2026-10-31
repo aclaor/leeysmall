@@ -141,7 +141,7 @@ async function handle(req, env, ctx) {
 
   await ensureSchema(env);
 
-  if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb FROM collections ORDER BY sort").all()).results);
+  if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb,cover FROM collections ORDER BY sort").all()).results);
   if (path === "/api/products") {
     const rows = (await env.DB.prepare("SELECT * FROM products WHERE active=1 ORDER BY reviews DESC, created_at DESC").all()).results;
     return json(rows.map(toPublic));
@@ -312,6 +312,11 @@ async function admin(req, env, ctx, path, m, url) {
     return json({ ok: true, id });
   }
 
+  if ((p = path.match(/^\/api\/admin\/collections\/([\w-]+)$/)) && m === "PATCH") {
+    const cover = str((await body(req)).cover, 100) || null;
+    await env.DB.prepare("UPDATE collections SET cover=? WHERE id=?").bind(cover, p[1]).run();
+    return json({ ok: true });
+  }
   if ((p = path.match(/^\/api\/admin\/collections\/([\w-]+)$/)) && m === "DELETE") {
     await env.DB.batch([env.DB.prepare("UPDATE products SET collection=NULL WHERE collection=?").bind(p[1]), env.DB.prepare("DELETE FROM collections WHERE id=?").bind(p[1])]);
     return json({ ok: true });
