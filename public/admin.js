@@ -157,29 +157,151 @@ function productModal(p) {
 }
 
 /* ---------- Import from CJ ---------- */
+// Matches a CJ category path to one of the store's categories.
+const AUTO_RULES = [
+  ["pets", /\bpet/i], ["toys-kids", /toy|kid|baby|babies|mother|maternity|child/i], ["automotive", /auto|motor|car\b|vehicle/i],
+  ["beauty-health", /beauty|health|hair|makeup|cosmetic|wig|nail|skin|personal care/i],
+  ["sports-outdoors", /sport|outdoor|fitness|camping|cycling|fishing/i],
+  ["electronics", /electronic|phone|computer|office|gadget|camera|audio|smart|game|gaming/i],
+  ["fashion", /cloth|apparel|fashion|bag|shoe|jewel|watch|dress|wear|luggage/i],
+  ["home-kitchen", /home|garden|furniture|kitchen|household|appliance|improvement|tool|light|decor|bed/i],
+];
+const autoCategory = (path) => {
+  for (const [id, re] of AUTO_RULES) if (re.test(path || "") && collections.some((c) => c.id === id)) return id;
+  return collections[0]?.id || "";
+};
+let cjTree = null;
+const cjState = { lv1: "", lv2: "", lv3: "", preset: "", q: "", us: false, sort: "popular", page: 1, target: "auto", markup: 2.5, publish: false, selected: new Map(), results: null };
+
+function cjCatIds() {
+  const st = cjState, l3 = (n) => (n?.children || []).map((c) => c.id);
+  if (st.lv3) return [st.lv3];
+  if (st.preset) return cjTree.filter((a) => autoCategory(a.name) === st.preset).flatMap((a) => a.children.flatMap(l3)).slice(0, 60);
+  const a = cjTree.find((x) => String(x.id) === st.lv1);
+  if (!a) return [];
+  const b = a.children.find((x) => String(x.id) === st.lv2);
+  return (b ? l3(b) : a.children.flatMap(l3)).slice(0, 60);
+}
+
 async function importCj() {
+  main().innerHTML = `<h1>Import from CJ Dropshipping</h1><div class="panel"><p class="muted" style="margin:0">Loading CJ categories…</p></div>`;
+  try { cjTree ||= await api("/api/admin/cj/categories"); }
+  catch (e) { main().innerHTML = `<h1>Import from CJ Dropshipping</h1><div class="panel alert">${esc(e.message)}</div>`; return; }
+  const st = cjState, opts = (list, sel, all) => `<option value="">${all}</option>` + list.map((x) => `<option value="${esc(x.id)}" ${String(x.id) === sel ? "selected" : ""}>${esc(x.name)}</option>`).join("");
+  const a = cjTree.find((x) => String(x.id) === st.lv1), b = a?.children.find((x) => String(x.id) === st.lv2);
   main().innerHTML = `<h1>Import from CJ Dropshipping</h1>
-    <form class="panel flex" id="sf" style="flex-wrap:wrap"><input class="inp" name="q" placeholder="Search CJ products, e.g. wireless earbuds" style="flex:1;min-width:220px" required>
-      <label class="flex" style="font-size:14px">Markup<select class="inp" name="markup" style="width:auto">${[2, 2.5, 3, 3.5].map((x) => `<option ${x === 2.5 ? "selected" : ""} value="${x}">${x}× cost</option>`).join("")}</select></label>
-      <select class="inp" name="collection" style="width:auto">${collections.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
-      <button class="btn">Search</button></form>
-    <p class="muted">Imported products start as <b>drafts</b> so you can check the title, photos and price before they go live in Products.</p><div id="res"></div>`;
-  $("#sf").onsubmit = async (e) => {
-    e.preventDefault(); const f = e.target, res = $("#res");
-    res.innerHTML = `<p class="muted">Searching CJ…</p>`;
-    try {
-      const list = await api("/api/admin/cj/search?q=" + encodeURIComponent(f.q.value));
-      if (!list.length) { res.innerHTML = `<p class="muted">No results. Try different words.</p>`; return; }
-      const mk = Number(f.markup.value);
-      res.innerHTML = `<div class="cj-grid">${list.map((p) => `<div class="cj-card"><img src="${esc(p.image)}" alt="" loading="lazy"><div class="b"><b>${esc(p.title)}</b>
-        <span class="muted">Cost ${money(p.cost)} → sell ≈ ${money(Math.ceil(p.cost * mk) - 0.01)}</span><button class="btn sm" data-pid="${esc(p.pid)}" style="margin-top:auto">Import</button></div></div>`).join("")}</div>`;
-      res.querySelectorAll("[data-pid]").forEach((b) => (b.onclick = async () => {
-        b.disabled = true; b.textContent = "Importing…";
-        try { const p = await api("/api/admin/cj/import", "POST", { pid: b.dataset.pid, markup: mk, collection: f.collection.value }); b.textContent = "Imported ✓"; toast("Added as draft: " + p.title); }
-        catch (er) { b.disabled = false; b.textContent = "Import"; toast(er.message); }
-      }));
-    } catch (er) { res.innerHTML = `<p style="color:var(--bad)">${esc(er.message)}</p>`; }
+    <div class="panel"><b>Quick browse</b><span class="muted" style="font-size:13px"> — best-selling CJ products for each of your categories, no typing needed</span>
+      <div class="chips" style="margin-top:12px">${collections.map((c) => `<button class="chip ${st.preset === c.id ? "on" : ""}" data-preset="${c.id}">${esc(c.name)}</button>`).join("")}</div></div>
+    <form class="panel" id="cjf"><div class="flex" style="flex-wrap:wrap;gap:10px">
+        <select class="inp" name="lv1" style="flex:1;min-width:180px">${opts(cjTree, st.lv1, "All CJ categories")}</select>
+        <select class="inp" name="lv2" style="flex:1;min-width:180px" ${a ? "" : "disabled"}>${opts(a?.children || [], st.lv2, "All subcategories")}</select>
+        <select class="inp" name="lv3" style="flex:1;min-width:180px" ${b ? "" : "disabled"}>${opts(b?.children || [], st.lv3, "All types")}</select></div>
+      <div class="flex" style="flex-wrap:wrap;gap:10px;margin-top:10px">
+        <input class="inp" name="q" value="${esc(st.q)}" placeholder="Keyword (optional), e.g. bedsheet" style="flex:2;min-width:200px">
+        <select class="inp" name="sort" style="width:auto">${[["popular", "Most popular"], ["new", "Newest"], ["price-asc", "Price: low → high"], ["price-desc", "Price: high → low"], ["match", "Best match"]].map(([v, t]) => `<option value="${v}" ${st.sort === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+        <label class="flex" style="font-size:14px;gap:6px;color:var(--ink-2)"><input type="checkbox" name="us" ${st.us ? "checked" : ""}> US warehouse only</label>
+        <button class="btn">Search</button></div></form>
+    <div class="panel flex" style="flex-wrap:wrap;gap:12px">
+      <label class="flex" style="font-size:14px;gap:8px">Import into
+        <select class="inp" id="cjTarget" style="width:auto"><option value="auto">Auto-match category</option>${collections.map((c) => `<option value="${c.id}" ${st.target === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="flex" style="font-size:14px;gap:8px">Markup
+        <select class="inp" id="cjMarkup" style="width:auto">${[2, 2.5, 3, 3.5].map((x) => `<option value="${x}" ${st.markup === x ? "selected" : ""}>${x}× cost</option>`).join("")}</select></label>
+      <label class="flex" style="font-size:14px;gap:6px;color:var(--ink-2)"><input type="checkbox" id="cjPublish" ${st.publish ? "checked" : ""}> Publish straight to the store (otherwise saved as drafts)</label></div>
+    <div id="res"></div>
+    <div id="bulkbar" class="panel" style="position:sticky;bottom:12px;z-index:5;display:none;margin-top:16px;box-shadow:var(--glow)"></div>`;
+
+  const f = $("#cjf");
+  main().querySelectorAll("[data-preset]").forEach((btn) => (btn.onclick = () => {
+    Object.assign(st, { preset: st.preset === btn.dataset.preset ? "" : btn.dataset.preset, lv1: "", lv2: "", lv3: "", q: "", page: 1 });
+    st.target = st.preset || "auto";
+    importCj().then(() => st.preset && cjRun());
+  }));
+  f.lv1.onchange = () => { Object.assign(st, { lv1: f.lv1.value, lv2: "", lv3: "", preset: "", target: "auto" }); importCj(); };
+  f.lv2.onchange = () => { Object.assign(st, { lv2: f.lv2.value, lv3: "" }); importCj(); };
+  f.lv3.onchange = () => { st.lv3 = f.lv3.value; };
+  f.onsubmit = (e) => { e.preventDefault(); Object.assign(st, { q: f.q.value.trim(), sort: f.sort.value, us: f.us.checked, lv3: f.lv3.value, page: 1 }); if (st.lv1 || st.q) st.preset = st.lv1 ? "" : st.preset; cjRun(); };
+  $("#cjTarget").onchange = (e) => { st.target = e.target.value; renderResults(); };
+  $("#cjMarkup").onchange = (e) => { st.markup = Number(e.target.value); renderResults(); };
+  $("#cjPublish").onchange = (e) => { st.publish = e.target.checked; };
+  if (st.results) renderResults();
+  renderBulk();
+}
+
+async function cjRun() {
+  const st = cjState, res = $("#res");
+  const cats = cjCatIds();
+  if (!st.q && !cats.length) { res.innerHTML = `<p class="muted">Pick a category or type a keyword.</p>`; return; }
+  res.innerHTML = `<p class="muted">Loading CJ products…</p>`;
+  try {
+    const qs = new URLSearchParams({ q: st.q, page: st.page, sort: st.sort, us: st.us ? "1" : "", cats: cats.join(",") });
+    st.results = await api("/api/admin/cj/search?" + qs);
+    renderResults();
+  } catch (e) { res.innerHTML = `<p style="color:var(--bad)">${esc(e.message)}</p>`; }
+}
+
+function renderResults() {
+  const st = cjState, r = st.results, res = $("#res");
+  if (!r || !res) return;
+  if (!r.items.length) { res.innerHTML = `<p class="muted">No products found. Try another category or turn off “US warehouse only”.</p>`; return; }
+  const target = (i) => (st.target === "auto" ? autoCategory(i.category) : st.target);
+  const cname = (id) => collections.find((c) => c.id === id)?.name || "—";
+  const fresh = r.items.filter((i) => !i.imported);
+  res.innerHTML = `<div class="row-between" style="margin:6px 0 12px;flex-wrap:wrap;gap:10px">
+      <span class="muted">${r.total.toLocaleString()} products · page ${r.page} of ${r.totalPages}</span>
+      <div class="flex"><button class="btn sm ghost" id="selAll">${fresh.length && fresh.every((i) => st.selected.has(i.pid)) ? "Unselect page" : "Select all on page"}</button>
+        <button class="btn sm ghost" id="prev" ${r.page <= 1 ? "disabled" : ""}>← Prev</button><button class="btn sm ghost" id="next" ${r.page >= r.totalPages ? "disabled" : ""}>Next →</button></div></div>
+    <div class="cj-grid">${r.items.map((i) => {
+      const on = st.selected.has(i.pid);
+      return `<div class="cj-card ${on ? "sel" : ""}" ${i.imported ? "" : `data-pick="${esc(i.pid)}"`} style="position:relative;cursor:${i.imported ? "default" : "pointer"};${on ? "border-color:var(--blue);box-shadow:var(--glow)" : ""}">
+        <span style="position:absolute;top:10px;left:10px;z-index:2;width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-weight:700;font-size:14px;
+          ${i.imported ? "background:rgba(61,220,151,.9);color:#04140c" : on ? "background:var(--blue);color:#fff" : "background:rgba(10,16,34,.75);border:1px solid var(--line-2)"}">${i.imported || on ? "✓" : ""}</span>
+        ${i.usStock ? `<span class="st processing" style="position:absolute;top:10px;right:10px;z-index:2">US stock</span>` : ""}
+        <img src="${esc(i.image)}" alt="" loading="lazy"><div class="b"><b>${esc(i.title)}</b>
+        <span class="muted" style="font-size:12px">${esc(i.category)}</span>
+        <span>Cost ${money(i.cost)} → sell ≈ <b>${money(Math.max(0.99, Math.ceil(i.cost * st.markup) - 0.01))}</b></span>
+        <span class="muted" style="font-size:12px">${i.listed ? i.listed.toLocaleString() + " stores selling · " : ""}${i.imported ? "Already in your store" : "→ " + esc(cname(target(i)))}</span></div></div>`;
+    }).join("")}</div>`;
+  res.querySelectorAll("[data-pick]").forEach((el) => (el.onclick = () => {
+    const i = r.items.find((x) => x.pid === el.dataset.pick);
+    st.selected.has(i.pid) ? st.selected.delete(i.pid) : st.selected.set(i.pid, i);
+    renderResults(); renderBulk();
+  }));
+  $("#selAll").onclick = () => {
+    const all = fresh.every((i) => st.selected.has(i.pid));
+    for (const i of fresh) all ? st.selected.delete(i.pid) : st.selected.set(i.pid, i);
+    renderResults(); renderBulk();
   };
+  $("#prev").onclick = () => { st.page--; cjRun(); window.scrollTo(0, 0); };
+  $("#next").onclick = () => { st.page++; cjRun(); window.scrollTo(0, 0); };
+}
+
+function renderBulk(progress) {
+  const st = cjState, bar = $("#bulkbar");
+  if (!bar) return;
+  const n = st.selected.size;
+  bar.style.display = n || progress ? "flex" : "none";
+  bar.className = "panel row-between";
+  if (progress) { bar.innerHTML = `<div style="flex:1"><b>${progress.text}</b><div class="bar" style="margin-top:8px"><i style="width:${progress.pct}%"></i></div></div>`; return; }
+  bar.innerHTML = `<span><b>${n} selected</b> <span class="muted">· ${st.publish ? "will go live right away" : "saved as drafts"}</span></span>
+    <div class="flex"><button class="btn sm ghost" id="clearSel">Clear</button><button class="btn sm accent" id="doImport">Import ${n} product${n === 1 ? "" : "s"}</button></div>`;
+  $("#clearSel").onclick = () => { st.selected.clear(); renderResults(); renderBulk(); };
+  $("#doImport").onclick = bulkImport;
+}
+
+async function bulkImport() {
+  const st = cjState, items = [...st.selected.values()];
+  let ok = 0, skip = 0, fail = [];
+  for (const [k, i] of items.entries()) {
+    renderBulk({ text: `Importing ${k + 1} of ${items.length}: ${i.title.slice(0, 60)}…`, pct: (k / items.length) * 100 });
+    try {
+      const r = await api("/api/admin/cj/import", "POST", { pid: i.pid, markup: st.markup, publish: st.publish, collection: st.target === "auto" ? autoCategory(i.category) : st.target });
+      r.alreadyImported ? skip++ : ok++;
+      i.imported = r.id; st.selected.delete(i.pid);
+    } catch (e) { fail.push(i.title.slice(0, 40) + ": " + e.message); }
+  }
+  renderBulk(); renderResults();
+  toast(`Imported ${ok}${skip ? `, ${skip} already in store` : ""}${fail.length ? `, ${fail.length} failed` : ""}`);
+  if (fail.length) $("#res").insertAdjacentHTML("afterbegin", `<div class="panel alert" style="font-size:13px">${fail.map(esc).join("<br>")}</div>`);
 }
 
 /* ---------- Discounts ---------- */

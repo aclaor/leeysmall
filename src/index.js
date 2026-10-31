@@ -1,6 +1,6 @@
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
-import { cjSearch, cjProduct, cjToRecord, cjStock, cjCreateOrder, cjOrderDetail } from "./cj.js";
+import { cjSearch, cjCategories, cjProduct, cjToRecord, cjStock, cjCreateOrder, cjOrderDetail } from "./cj.js";
 
 /* ---------------- helpers ---------------- */
 const json = (data, status = 200, headers = {}) =>
@@ -334,12 +334,28 @@ async function admin(req, env, ctx, path, m, url) {
   }
 
   // CJ
+  if (path === "/api/admin/cj/categories") {
+    try { return json(await cjCategories(env)); } catch (e) { return bad(e.message, 502); }
+  }
   if (path === "/api/admin/cj/search") {
-    try { return json(await cjSearch(env, str(url.searchParams.get("q"), 100), parseInt(url.searchParams.get("page")) || 1)); }
-    catch (e) { return bad(e.message, 502); }
+    try {
+      const r = await cjSearch(env, {
+        q: str(url.searchParams.get("q"), 100), page: parseInt(url.searchParams.get("page")) || 1, us: url.searchParams.get("us") === "1",
+        sort: str(url.searchParams.get("sort"), 20), categoryIds: str(url.searchParams.get("cats"), 4000).split(",").filter(Boolean),
+      });
+      const pids = r.items.map((i) => i.pid).filter(Boolean);
+      if (pids.length) {
+        const have = (await env.DB.prepare(`SELECT supplier_pid, id FROM products WHERE supplier='cj' AND supplier_pid IN (${pids.map(() => "?").join(",")})`).bind(...pids).all()).results;
+        const map = Object.fromEntries(have.map((h) => [h.supplier_pid, h.id]));
+        for (const i of r.items) i.imported = map[i.pid] || null;
+      }
+      return json(r);
+    } catch (e) { return bad(e.message, 502); }
   }
   if (path === "/api/admin/cj/import" && m === "POST") {
     const b = await body(req);
+    const existing = await env.DB.prepare("SELECT * FROM products WHERE supplier='cj' AND supplier_pid=?").bind(str(b.pid, 80)).first();
+    if (existing) return json({ ...toAdmin(existing), alreadyImported: true });
     try {
       const d = await cjProduct(env, str(b.pid, 80));
       let st = { total: 100, us: false };

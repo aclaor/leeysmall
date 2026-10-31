@@ -11,7 +11,7 @@ async function accessToken(env) {
   const cached = await getSetting(env, "cj_token");
   if (cached) { const { token, exp } = JSON.parse(cached); if (Date.now() < exp - 86400000) return token; }
   await pace();
-  const r = await fetch(BASE + "/authentication/getAccessToken", {
+  const r = await fetch((env.CJ_BASE || BASE) + "/authentication/getAccessToken", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ apiKey: env.CJ_API_KEY }),
   });
   const j = await r.json();
@@ -24,7 +24,7 @@ async function accessToken(env) {
 async function call(env, path, { method = "GET", body } = {}) {
   const t = await accessToken(env);
   await pace();
-  const r = await fetch(BASE + path, {
+  const r = await fetch((env.CJ_BASE || BASE) + path, {
     method, headers: { "CJ-Access-Token": t, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined,
   });
   const j = await r.json().catch(() => ({}));
@@ -39,9 +39,56 @@ const imgs = (d) => {
 };
 const num = (v) => { const n = parseFloat(String(v ?? "").split("--").pop()); return isNaN(n) ? 0 : n; };
 
-export async function cjSearch(env, q, page = 1) {
-  const d = await call(env, `/product/list?pageNum=${page}&pageSize=20&productNameEn=${encodeURIComponent(q)}`);
-  return (d?.list || []).map((p) => ({ pid: p.pid, title: p.productNameEn, image: p.productImage, cost: num(p.sellPrice), category: p.categoryName }));
+// CJ category tree (3 levels), cached for a day.
+export async function cjCategories(env) {
+  const cached = await getSetting(env, "cj_categories");
+  if (cached) { const c = JSON.parse(cached); if (Date.now() - c.at < 86400000) return c.tree; }
+  const d = await call(env, "/product/getCategory");
+  const tree = (Array.isArray(d) ? d : []).map((a) => ({
+    name: a.categoryFirstName, id: a.categoryFirstId || a.categoryFirstName,
+    children: (a.categoryFirstList || []).map((b) => ({
+      name: b.categorySecondName, id: b.categorySecondId || b.categorySecondName,
+      children: (b.categorySecondList || []).map((c) => ({ name: c.categoryName, id: c.categoryId })),
+    })),
+  }));
+  await setSetting(env, "cj_categories", JSON.stringify({ at: Date.now(), tree }));
+  return tree;
+}
+
+const firstImage = (v) => { if (!v) return ""; if (Array.isArray(v)) return v[0] || ""; if (typeof v === "string" && v.startsWith("[")) { try { return JSON.parse(v)[0] || ""; } catch {} } return String(v).includes(",http") ? String(v).split(",")[0] : String(v); };
+
+// Browse/search CJ. opts: { q, categoryIds: [3rd-level ids], page, us, sort: "popular"|"new"|"price-asc"|"price-desc" }
+export async function cjSearch(env, opts = {}) {
+  const page = Math.max(1, Math.min(1000, opts.page || 1)), size = 40;
+  const order = { popular: [1, "desc"], new: [3, "desc"], "price-asc": [2, "asc"], "price-desc": [2, "desc"] }[opts.sort] || [0, "desc"];
+  const qs = new URLSearchParams({ page, size, orderBy: order[0], sort: order[1] });
+  if (opts.q) qs.set("keyWord", opts.q);
+  const ids = (opts.categoryIds || []).filter(Boolean);
+  if (ids.length === 1) qs.set("categoryId", ids[0]);
+  else if (ids.length > 1) for (const id of ids.slice(0, 60)) qs.append("lv3categoryList", id);
+  if (opts.us) qs.set("countryCode", "US");
+  try {
+    const d = await call(env, "/product/listV2?" + qs);
+    const list = (d?.content || []).flatMap((c) => c.productList || []);
+    return {
+      page, totalPages: Math.min(d?.totalPages || 1, 1000), total: d?.totalRecords || list.length,
+      items: list.map((p) => ({ pid: p.id, title: p.nameEn, image: firstImage(p.bigImage), cost: num(p.nowPrice || p.discountPrice || p.sellPrice),
+        listed: p.listedNum || 0, category: [p.oneCategoryName, p.twoCategoryName, p.threeCategoryName].filter(Boolean).join(" › "),
+        usStock: !!opts.us, inventory: p.warehouseInventoryNum ?? null })),
+    };
+  } catch (e) {
+    // Fallback to the older list endpoint (one category at a time)
+    const q2 = new URLSearchParams({ pageNum: page, pageSize: size, orderBy: opts.sort === "popular" ? "listedNum" : "createAt", sort: "desc" });
+    if (opts.q) q2.set("productNameEn", opts.q);
+    if (ids[0]) q2.set("categoryId", ids[0]);
+    if (opts.us) q2.set("countryCode", "US");
+    const d = await call(env, "/product/list?" + q2);
+    return {
+      page, totalPages: Math.max(1, Math.ceil((d?.total || 0) / size)), total: d?.total || 0,
+      items: (d?.list || []).map((p) => ({ pid: p.pid, title: p.productNameEn, image: firstImage(p.productImage), cost: num(p.sellPrice),
+        listed: p.listedNum || 0, category: p.categoryName || "", usStock: !!opts.us, inventory: null })),
+    };
+  }
 }
 
 export async function cjProduct(env, pid) {
