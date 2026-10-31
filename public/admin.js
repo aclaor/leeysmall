@@ -110,15 +110,71 @@ function orderModal(o) {
 }
 
 /* ---------- Products ---------- */
+const pState = { q: "", status: "", cat: "", supplier: "", selected: new Set() };
 async function products() {
-  const list = await api("/api/admin/products");
+  const list = await api("/api/admin/products"), ps = pState;
+  const ids = new Set(list.map((p) => p.id));
+  for (const id of [...ps.selected]) if (!ids.has(id)) ps.selected.delete(id);
+  const counts = { all: list.length, draft: list.filter((p) => !p.active).length, live: list.filter((p) => p.active).length };
   main().innerHTML = `<div class="row-between"><h1>Products</h1><div class="flex"><a class="btn sm ghost" href="#import">Import from CJ</a><button class="btn sm" id="addP">Add product</button></div></div>
-    <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Product</th><th>Supplier</th><th>Price</th><th>Cost</th><th>Margin</th><th>Stock</th><th>Status</th></tr>
-    ${list.map((p) => { const mg = p.price ? Math.round(((p.price - p.cost) / p.price) * 100) : 0;
-      return `<tr class="click" data-p="${p.id}"><td><div class="flex">${thumb(p)}<div><b>${esc(p.title)}</b><div class="muted" style="font-size:12px">${esc(collections.find((c) => c.id === p.collection)?.name || "No collection")}${p.ships === "us" ? " · US warehouse" : ""}</div></div></div></td>
-      <td>${SUPPLIER[p.supplier] || esc(p.supplier)}</td><td>${money(p.price)}</td><td>${money(p.cost)}</td><td style="color:${mg < 30 ? "var(--bad)" : "var(--good)"};font-weight:600">${mg}%</td><td>${p.stock}</td><td>${p.active ? st("delivered").replace("Delivered", "Active") : '<span class="st">Draft</span>'}</td></tr>`; }).join("")}</table></div>`;
-  main().querySelectorAll("[data-p]").forEach((r) => (r.onclick = () => productModal(list.find((p) => p.id === r.dataset.p))));
+    <div class="chips" style="margin-bottom:12px">${[["", `All (${counts.all})`], ["draft", `Drafts (${counts.draft})`], ["live", `Live (${counts.live})`]].map(([v, t]) => `<button class="chip ${ps.status === v ? "on" : ""}" data-status="${v}">${t}</button>`).join("")}</div>
+    <div class="panel flex" style="flex-wrap:wrap;gap:10px;padding:14px">
+      <input class="inp" id="pq" placeholder="Search products…" value="${esc(ps.q)}" style="flex:2;min-width:200px">
+      <select class="inp" id="pcat" style="flex:1;min-width:160px"><option value="">All categories</option><option value="__none" ${ps.cat === "__none" ? "selected" : ""}>No category</option>${collections.map((c) => `<option value="${c.id}" ${ps.cat === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>
+      <select class="inp" id="psup" style="flex:1;min-width:160px"><option value="">All suppliers</option>${Object.entries(SUPPLIER).map(([k, v]) => `<option value="${k}" ${ps.supplier === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+    <div id="pbar"></div><div class="panel tbl-wrap" style="padding:6px 10px" id="ptable"></div>`;
+  const filtered = () => {
+    const q = ps.q.toLowerCase();
+    return list.filter((p) => (!ps.status || (ps.status === "live" ? p.active : !p.active)) && (!ps.supplier || p.supplier === ps.supplier)
+      && (!ps.cat || (ps.cat === "__none" ? !collections.some((c) => c.id === p.collection) : p.collection === ps.cat)) && (!q || p.title.toLowerCase().includes(q)));
+  };
+  const renderTable = () => {
+    const rows = filtered(), allOn = rows.length && rows.every((p) => ps.selected.has(p.id));
+    $("#ptable").innerHTML = rows.length ? `<table><tr><th style="width:34px"><input type="checkbox" id="pall" ${allOn ? "checked" : ""} title="Select all shown"></th><th>Product</th><th>Supplier</th><th>Price</th><th>Cost</th><th>Margin</th><th>Stock</th><th>Status</th></tr>
+      ${rows.map((p) => { const mg = p.price ? Math.round(((p.price - p.cost) / p.price) * 100) : 0;
+        return `<tr class="click" data-p="${p.id}"><td data-nopen><input type="checkbox" data-sel="${p.id}" ${ps.selected.has(p.id) ? "checked" : ""}></td>
+        <td><div class="flex">${thumb(p)}<div><b>${esc(p.title)}</b><div class="muted" style="font-size:12px">${esc(collections.find((c) => c.id === p.collection)?.name || "No category")}${p.ships === "us" ? " · US warehouse" : ""}</div></div></div></td>
+        <td>${SUPPLIER[p.supplier] || esc(p.supplier)}</td><td>${money(p.price)}</td><td>${money(p.cost)}</td><td style="color:${mg < 30 ? "var(--bad)" : "var(--good)"};font-weight:600">${mg}%</td><td>${p.stock}</td>
+        <td data-nopen><button class="st ${p.active ? "delivered" : ""}" data-toggle="${p.id}" title="Click to ${p.active ? "hide" : "publish"}" style="cursor:pointer">${p.active ? "Live" : "Draft"}</button></td></tr>`; }).join("")}</table>`
+      : `<p class="muted" style="padding:12px">No products match.</p>`;
+    renderBar();
+    $("#ptable").querySelectorAll("[data-p]").forEach((r) => (r.onclick = (e) => { if (!e.target.closest("[data-nopen]")) productModal(list.find((p) => p.id === r.dataset.p)); }));
+    $("#ptable").querySelectorAll("[data-sel]").forEach((c) => (c.onchange = () => { c.checked ? ps.selected.add(c.dataset.sel) : ps.selected.delete(c.dataset.sel); renderTable(); }));
+    const pall = $("#pall");
+    if (pall) pall.onchange = () => { for (const p of rows) pall.checked ? ps.selected.add(p.id) : ps.selected.delete(p.id); renderTable(); };
+    $("#ptable").querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = async () => {
+      const p = list.find((x) => x.id === b.dataset.toggle);
+      try { await api("/api/admin/products/bulk", "POST", { ids: [p.id], action: p.active ? "hide" : "publish" }); p.active = !p.active; toast(p.active ? "Published" : "Hidden"); products(); }
+      catch (er) { toast(er.message); }
+    }));
+  };
+  const renderBar = () => {
+    const n = ps.selected.size, bar = $("#pbar");
+    bar.innerHTML = n ? `<div class="panel row-between" style="position:sticky;top:10px;z-index:6;flex-wrap:wrap;gap:10px;padding:12px 16px;box-shadow:var(--glow)">
+      <b>${n} selected</b><div class="flex" style="flex-wrap:wrap;gap:8px">
+        <button class="btn sm accent" data-bulk="publish">Publish</button><button class="btn sm ghost" data-bulk="hide">Hide</button>
+        <select class="inp" id="bcat" style="width:auto;padding:7px 10px"><option value="">Move to category…</option>${collections.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
+        <select class="inp" id="bmk" style="width:auto;padding:7px 10px"><option value="">Set price markup…</option>${[2, 2.5, 3, 3.5, 4].map((x) => `<option value="${x}">${x}× cost</option>`).join("")}</select>
+        <button class="btn sm danger" data-bulk="delete">Delete</button><button class="btn sm ghost" id="bclear">Clear</button></div></div>` : "";
+    if (!n) return;
+    const run = async (action, extra = {}) => {
+      try { const r = await api("/api/admin/products/bulk", "POST", { ids: [...ps.selected], action, ...extra }); toast(`${r.count} product${r.count === 1 ? "" : "s"} updated`); if (action === "delete") ps.selected.clear(); products(); }
+      catch (er) { toast(er.message); }
+    };
+    bar.querySelectorAll("[data-bulk]").forEach((b) => (b.onclick = () => {
+      if (b.dataset.bulk === "delete" && !confirm(`Delete ${n} product${n === 1 ? "" : "s"} permanently?`)) return;
+      run(b.dataset.bulk);
+    }));
+    $("#bcat").onchange = (e) => e.target.value && run("category", { collection: e.target.value });
+    $("#bmk").onchange = (e) => e.target.value && confirm(`Reprice ${n} product${n === 1 ? "" : "s"} to ${e.target.value}× their cost?`) ? run("markup", { markup: Number(e.target.value) }) : (e.target.value = "");
+    $("#bclear").onclick = () => { ps.selected.clear(); renderTable(); };
+  };
+  main().querySelectorAll("[data-status]").forEach((b) => (b.onclick = () => { ps.status = b.dataset.status; products(); }));
+  $("#pq").oninput = (e) => { ps.q = e.target.value; renderTable(); };
+  $("#pcat").onchange = (e) => { ps.cat = e.target.value; renderTable(); };
+  $("#psup").onchange = (e) => { ps.supplier = e.target.value; renderTable(); };
   $("#addP").onclick = () => productModal(null);
+  renderTable();
 }
 function productModal(p) {
   const isNew = !p; p = p || { title: "", description: "", price: "", compareAt: "", cost: "", stock: 100, images: [], variants: [], supplier: "aliexpress", active: true, ships: "intl" };

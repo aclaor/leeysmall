@@ -267,6 +267,26 @@ async function admin(req, env, ctx, path, m, url) {
     return json(orderOut(await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(p[1]).first()));
   }
 
+  if (path === "/api/admin/products/bulk" && m === "POST") {
+    const b = await body(req);
+    const ids = (Array.isArray(b.ids) ? b.ids : []).map((x) => str(x, 100)).filter(Boolean).slice(0, 2000);
+    if (!ids.length) return bad("No products selected");
+    let sql, extra = [];
+    if (b.action === "publish") sql = "UPDATE products SET active=1, updated_at=datetime('now') WHERE id=?";
+    else if (b.action === "hide") sql = "UPDATE products SET active=0, updated_at=datetime('now') WHERE id=?";
+    else if (b.action === "delete") sql = "DELETE FROM products WHERE id=?";
+    else if (b.action === "category") { sql = "UPDATE products SET collection=?, updated_at=datetime('now') WHERE id=?"; extra = [str(b.collection, 40) || null]; }
+    else if (b.action === "markup") {
+      const mk = Number(b.markup);
+      if (!(mk >= 1.1 && mk <= 10)) return bad("Markup must be between 1.1 and 10");
+      // price = cost × markup, rounded to .99; compare-at 60% higher. Skips products with no cost.
+      sql = "UPDATE products SET price=MAX(0.99, CAST(cost*?+0.999 AS INTEGER)-0.01), compare_at=MAX(0.99, CAST(cost*?*1.6+0.999 AS INTEGER)-0.01), updated_at=datetime('now') WHERE id=? AND cost>0";
+      extra = [mk, mk];
+    } else return bad("Unknown action");
+    for (let i = 0; i < ids.length; i += 90)
+      await env.DB.batch(ids.slice(i, i + 90).map((id) => env.DB.prepare(sql).bind(...extra, id)));
+    return json({ ok: true, count: ids.length });
+  }
   if (path === "/api/admin/products" && m === "GET") {
     return json((await env.DB.prepare("SELECT * FROM products ORDER BY created_at DESC").all()).results.map(toAdmin));
   }
