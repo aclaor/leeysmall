@@ -97,7 +97,7 @@ export async function cjCreateOrder(env, order, lines, fromCountry) {
       orderNumber: order.id + (fromCountry === "US" ? "" : "-" + fromCountry), shippingCountryCode: order.country, shippingCountry: a.countryName || order.country,
       shippingProvince: a.province || a.city, shippingCity: a.city, shippingZip: a.zip, shippingAddress: a.address1,
       shippingAddress2: a.address2 || "", shippingCustomerName: order.name, shippingPhone: order.phone || "", email: order.email,
-      remark: "LeeysMall " + order.id, fromCountryCode: fromCountry, logisticName, payType: 3, products,
+      remark: "LeeysPremium " + order.id, fromCountryCode: fromCountry, logisticName, payType: 3, products,
     },
   });
   return { cjOrderId: d?.orderId || d?.orderNum || d, logisticName };

@@ -23,7 +23,7 @@ export async function createPaypalOrder(env, order) {
     body: JSON.stringify({
       intent: "CAPTURE",
       purchase_units: [{
-        reference_id: order.id, invoice_id: order.id, description: "LeeysMall order " + order.id,
+        reference_id: order.id, invoice_id: order.id, description: "LeeysPremium order " + order.id,
         amount: {
           currency_code: "USD", value: amt(order.total),
           breakdown: { item_total: { currency_code: "USD", value: amt(itemTotal) }, shipping: { currency_code: "USD", value: amt(order.shipping) },
@@ -32,7 +32,7 @@ export async function createPaypalOrder(env, order) {
         items: order.items.map((i) => ({ name: (i.title + (i.variant ? " - " + i.variant : "")).slice(0, 127), quantity: String(i.qty),
           unit_amount: { currency_code: "USD", value: amt(i.price) }, category: "PHYSICAL_GOODS" })),
       }],
-      payment_source: { paypal: { experience_context: { brand_name: "LeeysMall", shipping_preference: "NO_SHIPPING", user_action: "PAY_NOW" } } },
+      payment_source: { paypal: { experience_context: { brand_name: "LeeysPremium", shipping_preference: "NO_SHIPPING", user_action: "PAY_NOW" } } },
     }),
   });
   const j = await r.json();

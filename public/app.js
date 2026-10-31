@@ -1,4 +1,4 @@
-// LeeysMall storefront — stage 1 (design + cart). Payments and supplier sync arrive in stage 2.
+// LeeysPremium storefront — stage 1 (design + cart). Payments and supplier sync arrive in stage 2.
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 const FREE_SHIP = 49;
@@ -123,7 +123,7 @@ function home() {
   const pick = (id, i) => PRODUCTS.find((p) => p.id === id) || PRODUCTS[i % PRODUCTS.length];
   const hero = pick("aero-buds-pro", 0), h2 = pick("halo-desk-lamp", 1), h3 = pick("volt-20k-powerbank", 2), deal = pick("trio-wireless-station", 3);
   if (!PRODUCTS.length) { app.innerHTML = `<div class="wrap prose"><h1>New products coming soon</h1></div>`; return; }
-  document.title = "LeeysMall — Everything you need, delivered fast";
+  document.title = "LeeysPremium — Everything you need, delivered fast";
   app.innerHTML = `
   <section class="hero"><div class="wrap hero-inner">
     <div><span class="eyebrow">New arrivals every week · Up to 45% off</span>
@@ -154,7 +154,7 @@ function collection(id, params) {
   let list = id === "all" ? [...PRODUCTS] : PRODUCTS.filter((p) => p.collection === id);
   if (q) list = PRODUCTS.filter((p) => (p.title + " " + p.description).toLowerCase().includes(q));
   const title = q ? `Search: “${params.get("q")}”` : c ? c.name : "All products";
-  document.title = title + " — LeeysMall";
+  document.title = title + " — LeeysPremium";
   const state = { sort: params.get("sort") || "featured", stock: params.get("stock") === "1", max: Number(params.get("max")) || 0, us: params.get("us") === "1" };
   const apply = () => {
     let l = list.filter((p) => (!state.stock || p.stock > 0) && (!state.max || p.price <= state.max) && (!state.us || p.ships === "us"));
@@ -189,7 +189,7 @@ function deliveryText(p, country) {
 function product(id) {
   const p = PRODUCTS.find((x) => x.id === id);
   if (!p) return notFound();
-  document.title = p.title + " — LeeysMall";
+  document.title = p.title + " — LeeysPremium";
   const sel = Object.fromEntries(p.variants.map((v) => [v.name, v.options[0]]));
   let img = 0, qty = 1, country = "US";
   const off = p.compareAt ? Math.round((1 - p.price / p.compareAt) * 100) : 0;
@@ -232,7 +232,7 @@ function product(id) {
 }
 
 function cartPage() {
-  document.title = "Cart — LeeysMall";
+  document.title = "Cart — LeeysPremium";
   const lines = cart.lines(), sub = cart.subtotal();
   app.innerHTML = `<div class="wrap prose" style="max-width:900px"><h1>Your cart</h1>${lines.length ? `
     ${shipProgress(sub)}${lines.map((l) => `<div class="line"><a class="thumb" href="/products/${l.id}" data-link>${art(l.p)}</a><div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
@@ -259,7 +259,7 @@ async function api(path, data) {
 }
 
 function checkout() {
-  document.title = "Checkout — LeeysMall";
+  document.title = "Checkout — LeeysPremium";
   const lines = cart.lines();
   if (!lines.length) return go("/cart", true);
   let code = "";
@@ -331,9 +331,9 @@ function thankYou(params) {
 
 const STATUS_TEXT = { paid: "Payment received", processing: "Preparing your order", action_needed: "Preparing your order", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", refunded: "Refunded" };
 function track(params) {
-  document.title = "Track your order — LeeysMall";
+  document.title = "Track your order — LeeysPremium";
   app.innerHTML = `<div class="wrap prose"><h1>Track your order</h1><p>Enter the order number from your confirmation and the email you used at checkout.</p>
-    <form class="card-box" id="tForm"><div class="field"><input name="id" required placeholder="Order number, e.g. LM7K2QX9A1B" value="${esc(params.get("order") || "")}"></div><div class="field"><input name="email" type="email" required placeholder="Email used at checkout"></div><button class="btn block">Track</button></form><div id="tOut"></div></div>`;
+    <form class="card-box" id="tForm"><div class="field"><input name="id" required placeholder="Order number, e.g. LP7K2QX9A1B" value="${esc(params.get("order") || "")}"></div><div class="field"><input name="email" type="email" required placeholder="Email used at checkout"></div><button class="btn block">Track</button></form><div id="tOut"></div></div>`;
   $("#tForm").onsubmit = async (e) => {
     e.preventDefault(); const f = e.target, out = $("#tOut");
     try {
@@ -350,18 +350,18 @@ function track(params) {
 }
 
 function account() {
-  document.title = "Account — LeeysMall";
+  document.title = "Account — LeeysPremium";
   app.innerHTML = `<div class="wrap prose"><h1>Sign in</h1><form class="card-box" onsubmit="event.preventDefault()"><div class="field"><input type="email" placeholder="Email"></div><button class="btn block">Continue</button><p class="muted" style="font-size:14px">Customer accounts with order history arrive in the next stage.</p></form></div>`;
 }
 
 const PAGES = {
   shipping: ["Shipping", `<p>We ship to the United States and worldwide.</p><ul><li><b>United States:</b> 3–7 business days for items in our US warehouses; 8–15 days for other items.</li><li><b>Canada, UK, Australia:</b> 7–14 business days.</li><li><b>Rest of world:</b> 10–20 business days.</li></ul><p>Every order includes tracking. US orders over $${FREE_SHIP} ship free.</p>`],
   returns: ["Returns & refunds", `<p>You can return most items within 30 days of delivery. Items must be unused and in original packaging. Damaged or faulty items are replaced or refunded at no cost to you — just email us a photo.</p><p>Refunds go back to your original payment method within 5–10 business days of approval.</p>`],
-  contact: ["Contact us", `<p>Questions about an order? Email <b>support@leeysmall.com</b> and we'll reply within 24 hours, Monday to Saturday.</p>`],
+  contact: ["Contact us", `<p>Questions about an order? Email <b>support@leeyspremium.com</b> and we'll reply within 24 hours, Monday to Saturday.</p>`],
   privacy: ["Privacy policy", `<p>We collect only what's needed to process your order: your name, contact details, shipping address and order history. Payments are processed by our payment providers; we never store card numbers. We share your shipping details only with the supplier fulfilling your order and the carrier delivering it.</p>`],
-  terms: ["Terms of service", `<p>By using LeeysMall you agree to these terms. Prices are in USD. We may cancel an order if an item becomes unavailable, in which case you receive a full refund.</p>`],
+  terms: ["Terms of service", `<p>By using LeeysPremium you agree to these terms. Prices are in USD. We may cancel an order if an item becomes unavailable, in which case you receive a full refund.</p>`],
 };
-function contentPage(slug) { const pg = PAGES[slug]; if (!pg) return notFound(); document.title = pg[0] + " — LeeysMall"; app.innerHTML = `<div class="wrap prose"><h1>${pg[0]}</h1>${pg[1]}</div>`; }
+function contentPage(slug) { const pg = PAGES[slug]; if (!pg) return notFound(); document.title = pg[0] + " — LeeysPremium"; app.innerHTML = `<div class="wrap prose"><h1>${pg[0]}</h1>${pg[1]}</div>`; }
 function notFound() { app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><h1>Page not found</h1><a class="btn" href="/" data-link>Back to home</a></div>`; }
 
 /* ---------- Router ---------- */

@@ -20,7 +20,7 @@ const COUNTRY_NAMES = { US: "United States", CA: "Canada", GB: "United Kingdom",
 
 function newOrderId() {
   const a = crypto.getRandomValues(new Uint8Array(5));
-  return "LM" + [...a].map((b) => (b % 36).toString(36)).join("").toUpperCase() + Date.now().toString(36).slice(-3).toUpperCase();
+  return "LP" + [...a].map((b) => (b % 36).toString(36)).join("").toUpperCase() + Date.now().toString(36).slice(-3).toUpperCase();
 }
 
 /* ---------------- admin auth (signed cookie) ---------------- */

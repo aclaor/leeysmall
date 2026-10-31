@@ -1,4 +1,4 @@
-// LeeysMall admin dashboard
+// LeeysPremium admin dashboard
 const $ = (s, el = document) => el.querySelector(s);
 const root = $("#root");
 const money = (n) => "$" + Number(n || 0).toFixed(2);
@@ -21,7 +21,7 @@ const st = (s) => `<span class="st ${s}">${LABEL[s] || s}</span>`;
 const date = (d) => d ? new Date(d.replace(" ", "T") + "Z").toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
 function login() {
-  root.innerHTML = `<div class="login"><form class="panel" id="lf" style="width:min(380px,100%)"><div class="logo" style="margin-bottom:6px">Leeys<span>Mall</span></div><p class="muted" style="margin-top:0">Admin sign in</p>
+  root.innerHTML = `<div class="login"><form class="panel" id="lf" style="width:min(380px,100%)"><div class="logo" style="margin-bottom:6px">Leeys<span>Premium</span></div><p class="muted" style="margin-top:0">Admin sign in</p>
     <div class="field"><input class="inp" type="password" name="pw" placeholder="Admin password" autofocus required></div><button class="btn block">Sign in</button><p id="le" style="color:var(--bad);font-size:14px"></p></form></div>`;
   $("#lf").onsubmit = async (e) => {
     e.preventDefault();
@@ -30,7 +30,7 @@ function login() {
 }
 
 async function shell() {
-  root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Mall</span></div>
+  root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
     ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["products", "Products"], ["import", "Import from CJ"], ["discounts", "Discounts"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
@@ -199,7 +199,7 @@ async function subscribers() {
   main().innerHTML = `<div class="row-between"><h1>Subscribers (${list.length})</h1>${list.length ? `<button class="btn sm" id="csv">Download CSV</button>` : ""}</div>
     <div class="panel">${list.length ? list.map((s) => `<div class="row-between" style="padding:8px 0;border-bottom:1px solid var(--line)"><span>${esc(s.email)}</span><span class="muted">${date(s.created_at)}</span></div>`).join("") : `<p class="muted">No subscribers yet.</p>`}</div>`;
   const c = $("#csv");
-  if (c) c.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["email,date\n" + list.map((s) => `${s.email},${s.created_at}`).join("\n")], { type: "text/csv" })); a.download = "leeysmall-subscribers.csv"; a.click(); };
+  if (c) c.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["email,date\n" + list.map((s) => `${s.email},${s.created_at}`).join("\n")], { type: "text/csv" })); a.download = "leeyspremium-subscribers.csv"; a.click(); };
 }
 
 /* ---------- Setup ---------- */

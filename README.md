@@ -1,4 +1,4 @@
-# LeeysMall
+# LeeysPremium
 
 USA-focused general dropshipping store on Cloudflare Workers (worker: `leeymall`).
 
