@@ -1,3 +1,4 @@
+import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
 import { cjSearch, cjCategories, cjProduct, cjToRecord, cjStock, cjCreateOrder, cjOrderDetail } from "./cj.js";
@@ -268,6 +269,15 @@ async function admin(req, env, ctx, path, m, url) {
     return json(orderOut(await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(p[1]).first()));
   }
 
+  if (path === "/api/admin/seo" && m === "GET") {
+    const base = siteUrl(env, req), key = await indexNowKey(env);
+    const n = await env.DB.prepare("SELECT COUNT(*) n FROM products WHERE active=1").first();
+    return json({ site: base, sitemap: base + "/sitemap.xml", keyFile: `${base}/indexnow-${key}.txt`, liveProducts: n.n, last: parse(await getSetting(env, "indexnow_last"), null),
+      google: !!env.GOOGLE_SITE_VERIFICATION, bing: !!env.BING_SITE_VERIFICATION });
+  }
+  if (path === "/api/admin/seo/submit" && m === "POST") {
+    try { return json(await pingIndexNow(env, siteUrl(env, req), await allSitePaths(env))); } catch (e) { return bad(e.message, 502); }
+  }
   if (path === "/api/admin/hero" && m === "PUT") {
     const ids = ((await body(req)).ids || []).map((x) => str(x, 100)).filter(Boolean).slice(0, 12);
     await setSetting(env, "hero_slides", JSON.stringify([...new Set(ids)]));
@@ -291,6 +301,7 @@ async function admin(req, env, ctx, path, m, url) {
     } else return bad("Unknown action");
     for (let i = 0; i < ids.length; i += 90)
       await env.DB.batch(ids.slice(i, i + 90).map((id) => env.DB.prepare(sql).bind(...extra, id)));
+    if (["publish", "category", "markup", "hide", "delete"].includes(b.action)) ctx.waitUntil(pingIndexNow(env, siteUrl(env, req), ids.map((id) => "/products/" + id)).catch(() => {}));
     return json({ ok: true, count: ids.length });
   }
   if (path === "/api/admin/products" && m === "GET") {
@@ -314,6 +325,7 @@ async function admin(req, env, ctx, path, m, url) {
       if ("variants" in b) { sets.push("variants=?"); vals.push(JSON.stringify(b.variants || [])); }
       if (!sets.length) return bad("Nothing to update");
       await env.DB.prepare(`UPDATE products SET ${sets.join(",")}, updated_at=datetime('now') WHERE id=?`).bind(...vals, p[1]).run();
+      ctx.waitUntil(pingIndexNow(env, siteUrl(env, req), ["/products/" + p[1]]).catch(() => {}));
       return json(toAdmin(await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(p[1]).first()));
     }
   }
@@ -391,6 +403,7 @@ async function admin(req, env, ctx, path, m, url) {
       await env.DB.prepare(`INSERT OR REPLACE INTO products (id,title,description,collection,price,compare_at,cost,stock,images,variants,variant_map,supplier,supplier_pid,ships,reviews,rating,active)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,5,?)`).bind(rec.id, rec.title, rec.description, rec.collection, rec.price, rec.compare_at, rec.cost, rec.stock,
         rec.images, rec.variants, rec.variant_map, "cj", rec.supplier_pid, rec.ships, b.publish ? 1 : 0).run();
+      if (b.publish) ctx.waitUntil(pingIndexNow(env, siteUrl(env, req), ["/products/" + rec.id]).catch(() => {}));
       return json(toAdmin(await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(rec.id).first()));
     } catch (e) { return bad(e.message, 502); }
   }
@@ -403,8 +416,24 @@ async function admin(req, env, ctx, path, m, url) {
 
 export default {
   async fetch(req, env, ctx) {
-    const path = new URL(req.url).pathname;
-    if (!path.startsWith("/api/")) return env.ASSETS.fetch(req);
+    const url = new URL(req.url), path = url.pathname;
+    if (!path.startsWith("/api/")) {
+      try {
+        // Send every visitor and crawler to the main domain (e.g. workers.dev or www → leeyspremium.com)
+        if (env.SITE_URL && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname) && (req.method === "GET" || req.method === "HEAD")) {
+          const site = new URL(env.SITE_URL);
+          if (url.hostname !== site.hostname && !path.startsWith("/admin")) return Response.redirect(site.origin + path + url.search, 301);
+        }
+        if (path === "/sitemap.xml") return await sitemap(req, env);
+        if (path === "/robots.txt") return robots(req, env);
+        const k = path.match(/^\/indexnow-([a-f0-9]{32})\.txt$/);
+        if (k) { await ensureSchema(env); return k[1] === (await indexNowKey(env)) ? new Response(k[1], { headers: { "content-type": "text/plain" } }) : new Response("Not found", { status: 404 }); }
+        const accept = req.headers.get("accept") || "";
+        if ((req.method === "GET" || req.method === "HEAD") && !/\.[a-z0-9]+$/i.test(path) && !path.startsWith("/admin") && (accept.includes("text/html") || accept === "*/*" || !accept))
+          return await renderPage(req, env);
+      } catch (e) { console.error("seo", e); }
+      return env.ASSETS.fetch(req);
+    }
     try { return await handle(req, env, ctx); }
     catch (e) { console.error(e); return bad(e.message?.includes("no such table") || !env.DB ? "Database not connected yet" : "Server error", 500); }
   },

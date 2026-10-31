@@ -355,6 +355,9 @@ details.acc p { color: var(--ink-2); margin: 10px 0 0; font-size: 15px; }
 .install-pill .icon-btn { flex: none; width: 34px; height: 34px; }
 @keyframes pillIn { from { opacity: 0; transform: translate(-50%, 30px); } }
 @media (display-mode: standalone) { .announce { padding-top: max(8px, env(safe-area-inset-top)); } body { padding-bottom: env(safe-area-inset-bottom); } }
+.seo-snapshot { min-height: 60vh; }
+.seo-snapshot img { display: inline-block; width: 160px; height: 160px; object-fit: contain; border-radius: 14px; background: #070b18; margin: 6px 6px 0 0; }
+.seo-snapshot a { color: var(--blue-2); }
 .toast:empty { visibility: hidden; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 160%); color: #fff; padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 500; z-index: 90; transition: transform .25s;
   background: rgba(14,21,42,.9); border: 1px solid rgba(92,178,255,.4); box-shadow: 0 0 24px rgba(47,140,255,.4); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }

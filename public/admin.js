@@ -391,6 +391,24 @@ async function setup() {
     </div><div class="panel"><b>Categories</b><form id="cf" class="flex" style="margin-top:10px;flex-wrap:wrap"><input class="inp" name="name" placeholder="Name, e.g. Gaming" style="max-width:240px" required><input class="inp" name="blurb" placeholder="Short description" style="max-width:320px"><button class="btn sm">Add</button></form>
     <div class="chips" style="margin-top:14px">${collections.map((c) => `<span class="chip">${esc(c.name)} <button data-rmc="${c.id}" title="Remove" style="border:0;background:none;color:var(--bad);font-weight:700;padding:0 0 0 4px">×</button></span>`).join("")}</div>
     <p class="muted" style="margin-bottom:0;font-size:13px">The first 5 categories show in the top menu; all of them show on the homepage, mobile menu and footer. Removing a category keeps its products (they just become uncategorised).</p></div>`;
+  // Search engines
+  let seo = null; try { seo = await api("/api/admin/seo"); } catch {}
+  if (seo) {
+    const last = seo.last ? `Last sent ${new Date(seo.last.at).toLocaleString()} — ${seo.last.count} pages, ${[200, 202].includes(seo.last.status) ? "accepted ✓" : "response " + seo.last.status}` : "Not sent yet";
+    main().insertAdjacentHTML("beforeend", `<div class="panel"><b>Search engines (Google & Bing)</b>
+      <p class="muted" style="margin:6px 0 14px;font-size:13px">Every product, category and policy page now has its own title, description, Google product details (price, stock, returns) and is listed in your sitemap. New or changed products are sent to Bing instantly.</p>
+      <div class="check">
+        <div><span class="dot ok"></span><div><b>Sitemap</b><div class="muted" style="font-size:13px"><a href="${esc(seo.sitemap)}" target="_blank" style="color:var(--blue-2)">${esc(seo.sitemap)}</a> · ${seo.liveProducts} live products</div></div></div>
+        <div><span class="dot ok"></span><div><b>Bing instant indexing (IndexNow)</b><div class="muted" style="font-size:13px">${esc(last)}</div></div></div>
+        <div><span class="dot ${seo.google ? "ok" : ""}"></span><div><b>Google Search Console</b><div class="muted" style="font-size:13px">${seo.google ? "Verification tag installed." : "Verify ownership with the Domain/DNS option (recommended) or add a GOOGLE_SITE_VERIFICATION secret, then submit the sitemap."}</div></div></div>
+        <div><span class="dot ${seo.bing ? "ok" : ""}"></span><div><b>Bing Webmaster Tools</b><div class="muted" style="font-size:13px">${seo.bing ? "Verification tag installed." : "Easiest: “Import from Google Search Console” once Google is verified, or add a BING_SITE_VERIFICATION secret."}</div></div></div>
+      </div>
+      <div class="flex" style="margin-top:14px;flex-wrap:wrap;gap:10px"><button class="btn sm accent" id="seoSubmit">Send all pages to Bing now</button>
+        <a class="btn sm ghost" href="https://search.google.com/search-console" target="_blank" rel="noopener">Open Google Search Console ↗</a>
+        <a class="btn sm ghost" href="https://www.bing.com/webmasters" target="_blank" rel="noopener">Open Bing Webmaster Tools ↗</a></div></div>`);
+    $("#seoSubmit").onclick = async (e) => { e.target.disabled = true; try { const r = await api("/api/admin/seo/submit", "POST"); toast(r.ok ? `Sent ${r.count} pages to Bing` : r.skipped ? "Only works on your live https domain" : "Bing replied " + r.status); setup(); } catch (er) { toast(er.message); e.target.disabled = false; } };
+  }
+
   // Homepage showcase slides
   let cfg = {}; try { cfg = await (await fetch("/api/config")).json(); } catch {}
   const slides = (cfg.heroSlides || []).filter((id) => prods.some((p) => p.id === id));
