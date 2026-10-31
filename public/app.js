@@ -123,10 +123,71 @@ const trust = () => `<section class="trust"><div class="wrap trust-row">${[
 ].map(([i, a, b]) => `<div class="trust-item"><svg viewBox="0 0 24 24">${trustIcons[i]}</svg><div><b>${a}</b><span class="muted">${b}</span></div></div>`).join("")}</div></section>`;
 
 /* ---------- Pages ---------- */
+/* ---------- Homepage showcase (rotating, current slide grows big) ---------- */
+let SHOW = { slides: [], cur: 0, timer: null };
+function showcaseSlides() {
+  const withPhoto = (p) => p && p.images?.length;
+  const chosen = (CONFIG.heroSlides || []).map((id) => PRODUCTS.find((p) => p.id === id)).filter(Boolean)
+    .map((p) => ({ p, tag: COLLECTIONS.find((c) => c.id === p.collection)?.name || "Featured", label: p.title, price: p.price, compareAt: p.compareAt, href: "/products/" + p.id }));
+  if (chosen.length) return chosen;
+  const used = new Set(), out = [];
+  for (const c of COLLECTIONS) {
+    const p = coverProduct(c);
+    if (p && !used.has(p.id)) { used.add(p.id); out.push({ p, tag: "Shop category", label: c.name, href: "/collections/" + c.id, cta: "Explore →" }); }
+  }
+  for (const p of [...PRODUCTS].filter(withPhoto).sort((a, b) => b.reviews - a.reviews)) {
+    if (out.length >= 5) break;
+    if (!used.has(p.id)) { used.add(p.id); out.push({ p, tag: "Best seller", label: p.title, price: p.price, compareAt: p.compareAt, href: "/products/" + p.id }); }
+  }
+  return out.length ? out : PRODUCTS.slice(0, 5).map((p) => ({ p, tag: "Featured", label: p.title, price: p.price, href: "/products/" + p.id }));
+}
+function showcaseHTML() {
+  SHOW.slides = showcaseSlides(); SHOW.cur = 0;
+  return `<div class="showcase" id="showcase" aria-roledescription="carousel">
+    <div class="sc-orbit"><i></i><i></i><i></i></div>
+    <div class="sc-stage">${SHOW.slides.map((s, i) => `<a class="sc-card" data-sc="${i}" href="${s.href}" data-link aria-label="${esc(s.label)}">
+      <div class="sc-media">${art(s.p, 0)}</div>
+      <div class="sc-info"><span class="sc-tag">${esc(s.tag)}</span><b>${esc(s.label)}</b>
+        <span class="sc-price">${s.price != null ? `${money(s.price)}${s.compareAt ? ` <s>${money(s.compareAt)}</s>` : ""}` : esc(s.cta || "Shop now →")}</span></div></a>`).join("")}</div>
+    <div class="sc-dots">${SHOW.slides.map((_, i) => `<button data-dot="${i}" aria-label="Show slide ${i + 1}"></button>`).join("")}</div></div>`;
+}
+function layoutShowcase() {
+  const n = SHOW.slides.length;
+  document.querySelectorAll("#showcase .sc-card").forEach((el, i) => {
+    let d = (i - SHOW.cur + n) % n; if (d > n / 2) d -= n;
+    el.dataset.pos = Math.abs(d) > 2 ? "hidden" : String(d);
+    el.tabIndex = d === 0 ? 0 : -1;
+  });
+  document.querySelectorAll("#showcase [data-dot]").forEach((b, i) => b.classList.toggle("on", i === SHOW.cur));
+}
+function startShowcase() {
+  clearInterval(SHOW.timer);
+  const box = $("#showcase");
+  if (!box || !SHOW.slides.length) return;
+  const go = (i) => { SHOW.cur = (i + SHOW.slides.length) % SHOW.slides.length; layoutShowcase(); };
+  layoutShowcase();
+  box.querySelectorAll(".sc-card").forEach((el) => el.addEventListener("click", (e) => {
+    if (el.dataset.pos !== "0") { e.preventDefault(); e.stopPropagation(); go(Number(el.dataset.sc)); }
+  }, true));
+  box.querySelectorAll("[data-dot]").forEach((b) => (b.onclick = () => go(Number(b.dataset.dot))));
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const play = () => { clearInterval(SHOW.timer); if (!reduce && SHOW.slides.length > 1) SHOW.timer = setInterval(() => { if (!document.body.contains(box)) return clearInterval(SHOW.timer); go(SHOW.cur + 1); }, 3600); };
+  box.onmouseenter = () => clearInterval(SHOW.timer); box.onmouseleave = play;
+  let sx = null;
+  box.ontouchstart = (e) => { sx = e.touches[0].clientX; clearInterval(SHOW.timer); };
+  box.ontouchend = (e) => { if (sx != null) { const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 40) go(SHOW.cur + (dx < 0 ? 1 : -1)); } sx = null; play(); };
+  play();
+}
+function marquee() {
+  const items = [...COLLECTIONS.map((c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`), "<span>Free US shipping over $" + FREE_SHIP + "</span>", "<span>30-day returns</span>", "<span>Secure checkout</span>"];
+  const row = items.map((x) => x + "<em>✦</em>").join("");
+  return `<div class="marquee" aria-hidden="false"><div class="mq-track"><div>${row}</div><div aria-hidden="true">${row}</div></div></div>`;
+}
+
 function home() {
   const best = [...PRODUCTS].sort((a, b) => b.reviews - a.reviews).slice(0, 8);
   const pick = (id, i) => PRODUCTS.find((p) => p.id === id) || PRODUCTS[i % PRODUCTS.length];
-  const hero = pick("aero-buds-pro", 0), h2 = pick("halo-desk-lamp", 1), h3 = pick("volt-20k-powerbank", 2), deal = pick("trio-wireless-station", 3);
+  const deal = pick("trio-wireless-station", 3);
   if (!PRODUCTS.length) { app.innerHTML = `<div class="wrap prose"><h1>New products coming soon</h1></div>`; return; }
   document.title = "LeeysPremium — Everything you need, delivered fast";
   app.innerHTML = `
@@ -135,8 +196,9 @@ function home() {
       <h1>Everything you need, in one place.</h1>
       <p>Home, tech, fashion, beauty, outdoors and more — hand-picked, fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
       <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn ghost" href="/collections/all?sort=best" data-link>Best sellers</a></div></div>
-    <div class="hero-art"><a class="tile t1" href="/products/${hero.id}" data-link>${art(hero, 1)}</a><a class="tile t2" href="/products/${h2.id}" data-link>${art(h2, 2)}</a><a class="tile t3" href="/products/${h3.id}" data-link>${art(h3, 3)}</a></div>
+    ${showcaseHTML()}
   </div></section>
+  ${marquee()}
   ${trust()}
   <section class="section"><div class="wrap"><div class="section-head"><h2>Shop by category</h2><a class="link-arrow" href="/collections/all" data-link>View all →</a></div>
     <div class="coll-grid">${COLLECTIONS.map((c) => `<a class="coll-card" href="/collections/${c.id}" data-link>${collArt(c)}<div class="name">${esc(c.name)}</div></a>`).join("")}</div></div></section>
@@ -151,6 +213,7 @@ function home() {
       ["The 3-in-1 charger cleaned up my whole nightstand. Arrived in 4 days.", "Jenna R.", "Trio Charging Station"],
       ["Power bank charged my phone four times on a camping trip. Solid build.", "Daniel K.", "Volt 20,000mAh"],
     ].map(([t, w, p]) => `<div class="review">${stars(5, 1).replace(/\s*5\.0 \(1\)/, "")}<p>“${t}”</p><div class="who">${w} <span>✓ Verified buyer</span></div><small class="muted">${p}</small></div>`).join("")}</div></div></section>`;
+  startShowcase();
 }
 
 function collection(id, params) {
@@ -372,7 +435,7 @@ function notFound() { app.innerHTML = `<div class="wrap prose" style="text-align
 /* ---------- Router ---------- */
 function route() {
   const { pathname, search } = location, params = new URLSearchParams(search);
-  closeAll(); window.scrollTo(0, 0);
+  closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer);
   let m;
   if (pathname === "/") home();
   else if (pathname === "/search") collection("all", params);

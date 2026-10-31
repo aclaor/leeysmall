@@ -391,6 +391,23 @@ async function setup() {
     </div><div class="panel"><b>Categories</b><form id="cf" class="flex" style="margin-top:10px;flex-wrap:wrap"><input class="inp" name="name" placeholder="Name, e.g. Gaming" style="max-width:240px" required><input class="inp" name="blurb" placeholder="Short description" style="max-width:320px"><button class="btn sm">Add</button></form>
     <div class="chips" style="margin-top:14px">${collections.map((c) => `<span class="chip">${esc(c.name)} <button data-rmc="${c.id}" title="Remove" style="border:0;background:none;color:var(--bad);font-weight:700;padding:0 0 0 4px">×</button></span>`).join("")}</div>
     <p class="muted" style="margin-bottom:0;font-size:13px">The first 5 categories show in the top menu; all of them show on the homepage, mobile menu and footer. Removing a category keeps its products (they just become uncategorised).</p></div>`;
+  // Homepage showcase slides
+  let cfg = {}; try { cfg = await (await fetch("/api/config")).json(); } catch {}
+  const slides = (cfg.heroSlides || []).filter((id) => prods.some((p) => p.id === id));
+  main().insertAdjacentHTML("beforeend", `<div class="panel" id="heroPanel"><b>Homepage showcase</b>
+    <p class="muted" style="margin:6px 0 14px;font-size:13px">The rotating cards at the top of the homepage — the front card grows big. ${slides.length ? "Showing your picks in this order:" : "Currently <b>automatic</b>: it rotates your category images. Add products below to choose the slides yourself."}</p>
+    ${slides.map((id, i) => { const p = prods.find((x) => x.id === id); return `<div class="row-between" style="padding:8px 0;border-bottom:1px solid var(--line);gap:10px">
+      <div class="flex">${thumb(p)}<div><b>${i + 1}. ${esc(p.title.slice(0, 70))}</b><div class="muted" style="font-size:12px">${money(p.price)}${p.active ? "" : " · <span style='color:var(--warn)'>Draft — hidden until published</span>"}</div></div></div>
+      <div class="flex" style="gap:6px"><button class="btn sm ghost" data-hmove="${i}" data-d="-1" ${i ? "" : "disabled"}>↑</button><button class="btn sm ghost" data-hmove="${i}" data-d="1" ${i < slides.length - 1 ? "" : "disabled"}>↓</button><button class="btn sm ghost" data-hrm="${i}">Remove</button></div></div>`; }).join("")}
+    <div class="flex" style="margin-top:14px;flex-wrap:wrap;gap:10px">
+      <select class="inp" id="heroAdd" style="max-width:460px"><option value="">+ Add a product to the showcase…</option>${[...prods].filter((p) => p.active && !slides.includes(p.id)).sort((a, b) => (b.images?.length ? 1 : 0) - (a.images?.length ? 1 : 0))
+        .map((p) => `<option value="${p.id}">${esc(p.title.slice(0, 70))}${p.images?.length ? "" : " (no photo)"}</option>`).join("")}</select>
+      ${slides.length ? `<button class="btn sm ghost" id="heroAuto">Back to automatic</button>` : ""}</div></div>`);
+  const saveHero = async (ids, msg) => { try { await api("/api/admin/hero", "PUT", { ids }); toast(msg); setup(); } catch (er) { toast(er.message); } };
+  $("#heroAdd").onchange = (e) => e.target.value && (slides.length >= 12 ? toast("Up to 12 slides") : saveHero([...slides, e.target.value], "Added to showcase"));
+  main().querySelectorAll("[data-hrm]").forEach((b) => (b.onclick = () => saveHero(slides.filter((_, i) => i !== Number(b.dataset.hrm)), "Removed")));
+  main().querySelectorAll("[data-hmove]").forEach((b) => (b.onclick = () => { const i = Number(b.dataset.hmove), j = i + Number(b.dataset.d), a = [...slides]; [a[i], a[j]] = [a[j], a[i]]; saveHero(a, "Order updated"); }));
+  const ha = $("#heroAuto"); if (ha) ha.onclick = () => saveHero([], "Showcase is automatic again");
   main().insertAdjacentHTML("beforeend", `<div class="panel"><b>Category images</b><p class="muted" style="margin:6px 0 14px;font-size:13px">Pick which product's photo shows on each category tile on the homepage. “Automatic” uses the first product in that category that has a photo.</p>
     <div class="tbl-wrap"><table><tr><th>Category</th><th>Image</th><th>Product shown</th></tr>${collections.map((c) => {
       const inCat = prods.filter((p) => p.collection === c.id && p.active);

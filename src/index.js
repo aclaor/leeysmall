@@ -137,9 +137,10 @@ async function handle(req, env, ctx) {
   let p;
 
   // Public config
-  if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES });
-
   await ensureSchema(env);
+
+  if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES,
+    heroSlides: parse(await getSetting(env, "hero_slides"), []) });
 
   if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb,cover FROM collections ORDER BY sort").all()).results);
   if (path === "/api/products") {
@@ -267,6 +268,11 @@ async function admin(req, env, ctx, path, m, url) {
     return json(orderOut(await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(p[1]).first()));
   }
 
+  if (path === "/api/admin/hero" && m === "PUT") {
+    const ids = ((await body(req)).ids || []).map((x) => str(x, 100)).filter(Boolean).slice(0, 12);
+    await setSetting(env, "hero_slides", JSON.stringify([...new Set(ids)]));
+    return json({ ok: true, ids });
+  }
   if (path === "/api/admin/products/bulk" && m === "POST") {
     const b = await body(req);
     const ids = (Array.isArray(b.ids) ? b.ids : []).map((x) => str(x, 100)).filter(Boolean).slice(0, 2000);
