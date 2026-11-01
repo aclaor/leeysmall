@@ -102,7 +102,9 @@ function closeAll() { $("#drawer").hidden = true; $("#overlay").hidden = true; $
 
 /* ---------- UI pieces ---------- */
 /* ---------- Promos, delivery estimates, countdowns ---------- */
-let PROMO = { promos: [], vouchers: [] };
+let PROMO = { promos: [], vouchers: [], schedules: [] };
+const schedFor = (p) => (PROMO.schedules || []).filter((s) => s.scope === "all" || (s.scope === "collection" && s.target === p.collection) || (s.scope === "products" && (s.target || []).includes(p.id))).sort((a, b) => b.percent - a.percent)[0];
+const schedForCat = (id) => (PROMO.schedules || []).filter((s) => s.scope === "all" || (s.scope === "collection" && s.target === id)).sort((a, b) => b.percent - a.percent)[0];
 const shopCountry = () => { try { return localStorage.getItem("lp_country") || CONFIG.country || "US"; } catch { return CONFIG.country || "US"; } };
 const setShopCountry = (c) => { try { localStorage.setItem("lp_country", c); } catch {} };
 function etaDays(p, country) {
@@ -123,6 +125,7 @@ function timeLeft(iso) {
 }
 setInterval(() => document.querySelectorAll("[data-ends]").forEach((el) => (el.textContent = timeLeft(el.dataset.ends))), 1000);
 const bestVoucher = () => PROMO.vouchers[0] || null;
+const videoTag = (p, controls) => `<video class="pvideo" src="${esc(p.video)}" ${controls ? "controls" : ""} autoplay muted playsinline loop preload="metadata" ${p.images?.[0] ? `poster="${esc(p.images[0])}"` : ""}></video>`;
 const offPct = (p) => (p.compareAt && p.compareAt > p.price ? Math.round((1 - p.price / p.compareAt) * 100) : 0);
 
 const stars = (r, n) => `<div class="stars"><i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${r.toFixed(1)} (${n.toLocaleString()})</div>`;
@@ -131,11 +134,12 @@ function card(p) {
   return `<div class="card"><div class="media-wrap"><a href="/products/${p.id}" data-link><div class="media">
       ${p.stock === 0 ? `<span class="badge out">Sold out</span>` : p.promo ? `<span class="badge flash">⚡<span class="fl-txt"> ${esc(p.promo.label)}</span></span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : ""}
       ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}
-      <div class="ribbons">${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">Voucher ${v.percent}% off</span>` : ""}</div></div></a>
+      <div class="ribbons">${p.video ? `<span class="rb vid">▶ Video</span>` : ""}${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">Voucher ${v.percent}% off</span>` : ""}</div></div></a>
     ${p.stock > 0 ? `<button class="btn quick-add" data-add="${p.id}">Quick add</button>` : ""}</div>
     <a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>
     <div class="price ${off ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s>` : ""}</div>
-    ${p.promo ? `<div class="promo-line">⚡ ${p.promo.percent}% off · ends in <span data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</span></div>` : ""}
+    ${p.promo ? `<div class="promo-line">⚡ ${p.promo.percent}% off · ends in <span data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</span></div>`
+      : (() => { const s = schedFor(p); return s ? `<div class="sched-line">📅 ${s.percent}% off · ${esc(s.text.split(",")[0])}</div>` : ""; })()}
     <div class="card-meta"><span class="eta">🚚 ${etaShort(p)}</span>${p.sold ? `<span>${p.sold.toLocaleString()} sold</span>` : ""}</div></div>`;
 }
 const trustIcons = {
@@ -225,11 +229,14 @@ function home() {
     <div><span class="eyebrow">New arrivals every week${maxOff >= 10 ? ` · Up to ${maxOff}% off` : ""}</span>
       <h1>Everything you need, in one place.</h1>
       <p>Home, tech, fashion, beauty, outdoors and more — hand-picked, fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
-      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn ghost" href="/categories" data-link>Browse categories</a></div></div>
+      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn ghost" href="/categories" data-link>Browse categories</a></div>
+      <div class="hero-ctas" style="margin-top:12px"><a class="btn live-btn ${CONFIG.live?.status === "live" ? "on" : ""}" href="/live" data-link><i></i>Premium Live${CONFIG.live?.status === "live" ? " · now" : ""}</a><a class="btn ghost video-btn" href="/videos" data-link>▶ Premium Video</a></div></div>
     ${showcaseHTML()}
   </div></section>
   ${marquee()}
   ${voucherStrip()}
+  ${(PROMO.schedules || []).length ? `<section class="vouchers"><div class="wrap"><div class="v-rail">${PROMO.schedules.map((s) => `<a class="sched-card" href="${s.scope === "collection" ? "/collections/" + s.target : "/collections/all"}" data-link>
+    <b>📅 ${s.percent}% off</b><span>${esc(s.label)}${s.scope === "collection" ? " · " + esc(COLLECTIONS.find((c) => c.id === s.target)?.name || "") : ""}</span><small>${esc(s.text)}</small></a>`).join("")}</div></div></section>` : ""}
   ${trust()}
   ${onSale.length ? `<section class="section"><div class="wrap"><div class="section-head flash-head"><h2>⚡ Flash sale</h2>
       <div class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></div><a class="link-arrow" href="/collections/all?sort=deals" data-link>See all deals →</a></div>
@@ -291,7 +298,8 @@ function collection(id, params) {
   app.innerHTML = `<div class="wrap">
     ${!q ? `<div class="cat-banner">${cover ? `<div class="cat-thumb">${art(cover)}</div>` : ""}<div class="cat-info"><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/categories" data-link>Categories</a> / ${esc(title)}</div>
       <h1>${esc(title)}</h1><p class="muted">${c ? esc(c.blurb || "") + " · " : ""}${list.length} products · 🚚 delivery from ${etaShort({ ships: "us" })}</p>
-      ${catPromo ? `<div class="promo-line big">⚡ ${esc(catPromo.label)} — ${catPromo.percent}% off · ends in <b data-ends="${catPromo.endsAt}">${timeLeft(catPromo.endsAt)}</b></div>` : ""}</div></div>`
+      ${catPromo ? `<div class="promo-line big">⚡ ${esc(catPromo.label)} — ${catPromo.percent}% off · ends in <b data-ends="${catPromo.endsAt}">${timeLeft(catPromo.endsAt)}</b></div>`
+        : (() => { const s = c ? schedForCat(c.id) : null; return s ? `<div class="sched-line big">📅 ${esc(s.label)}: ${s.percent}% off — ${esc(s.text)}</div>` : ""; })()}</div></div>`
     : `<div class="page-head"><div class="crumbs"><a href="/" data-link>Home</a> / Search</div><h1>${esc(title)}</h1></div>`}
     ${q ? "" : `<div class="chips"><a class="chip ${id === "all" ? "on" : ""}" href="/collections/all" data-link>All</a>${COLLECTIONS.map((x) => `<a class="chip ${x.id === id ? "on" : ""}" href="/collections/${x.id}" data-link>${esc(x.name)}</a>`).join("")}</div>`}
     ${voucherStrip()}
@@ -310,6 +318,76 @@ function collection(id, params) {
   $("#fMax").onchange = (e) => { state.max = Number(e.target.value); apply(); };
   bindVouchers();
   apply();
+}
+
+/* ---------- Premium Video: swipeable feed of product videos ---------- */
+let VFEED = { obs: null, muted: true };
+function videosPage() {
+  document.title = "Premium Video — LeeysPremium";
+  const list = PRODUCTS.filter((p) => p.video).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  if (!list.length) { app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><h1>▶ Premium Video</h1><p>Product videos are coming soon. Meanwhile, catch us on <a href="/live" data-link style="color:var(--blue-2)">Premium Live</a>.</p></div>`; return; }
+  app.innerHTML = `<div class="wrap vpage"><div class="vhead"><h1>▶ Premium Video</h1><p class="muted">Watch before you buy · ${list.length} product video${list.length === 1 ? "" : "s"} · swipe or scroll</p></div>
+    <div class="vfeed" id="vfeed">${list.map((p, i) => `<section class="vslide" data-vi="${i}">
+      <video src="${esc(p.video)}" muted playsinline loop preload="${i < 2 ? "auto" : "metadata"}" ${p.images?.[0] ? `poster="${esc(p.images[0])}"` : ""}></video>
+      <button class="vmute" aria-label="Sound on/off">🔇</button>
+      <div class="vover">${p.promo ? `<span class="badge flash" style="position:static;display:inline-block;margin-bottom:8px">⚡ ${esc(p.promo.label)} · ${p.promo.percent}% off</span>` : ""}
+        <a class="vtitle" href="/products/${p.id}" data-link>${esc(p.title)}</a>
+        <div class="price ${offPct(p) ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s>` : ""}<span class="muted" style="font-size:13px;margin-left:8px">🚚 ${etaShort(p)}</span></div>
+        <div class="vbtns"><button class="btn accent" data-add="${p.id}" ${p.stock > 0 ? "" : "disabled"}>${p.stock > 0 ? "Add to cart" : "Sold out"}</button><a class="btn ghost" href="/products/${p.id}" data-link>View product</a></div></div></section>`).join("")}</div></div>`;
+  const vids = [...document.querySelectorAll(".vslide video")];
+  VFEED.obs?.disconnect();
+  VFEED.obs = new IntersectionObserver((entries) => entries.forEach((e) => {
+    const v = e.target.querySelector("video");
+    if (e.isIntersecting && e.intersectionRatio > 0.6) { v.muted = VFEED.muted; v.play().catch(() => {}); } else v.pause();
+  }), { threshold: [0, 0.6, 1] });
+  document.querySelectorAll(".vslide").forEach((s) => VFEED.obs.observe(s));
+  document.querySelectorAll(".vmute").forEach((b) => (b.onclick = () => { VFEED.muted = !VFEED.muted; vids.forEach((v) => (v.muted = VFEED.muted)); document.querySelectorAll(".vmute").forEach((x) => (x.textContent = VFEED.muted ? "🔇" : "🔊")); }));
+  document.querySelectorAll(".vslide video").forEach((v) => (v.onclick = () => (v.paused ? v.play() : v.pause())));
+}
+
+/* ---------- Premium Live: stream + pinned products + live comments ---------- */
+let LIVE = { timer: null, lastId: 0, status: null };
+async function livePage() {
+  document.title = "Premium Live — LeeysPremium";
+  clearInterval(LIVE.timer);
+  app.innerHTML = `<div class="wrap prose"><p class="muted">Loading Premium Live…</p></div>`;
+  let d; try { d = await api("/api/live"); } catch { app.innerHTML = `<div class="wrap prose"><h1>Premium Live</h1><p>Couldn't load the live page. Please refresh.</p></div>`; return; }
+  if (location.pathname !== "/live") return;
+  LIVE.status = d.status; LIVE.lastId = d.comments.length ? d.comments[d.comments.length - 1].id : 0;
+  const pinned = d.pinned.map((id) => PRODUCTS.find((p) => p.id === id)).filter(Boolean);
+  const badge = { live: `<span class="live-badge">● LIVE</span>`, replay: `<span class="live-badge replay">▶ REPLAY</span>`, scheduled: `<span class="live-badge sched">📅 UPCOMING</span>`, off: "" }[d.status];
+  const player = d.status === "live" || d.status === "replay"
+    ? (d.status === "replay" && d.video ? `<video src="${esc(d.video)}" controls autoplay muted playsinline></video>` : d.embed ? `<iframe src="${esc(d.embed.src)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Live stream"></iframe>` : "")
+    : `<div class="live-idle">${d.status === "scheduled" ? `<div><div class="muted">Next live starts in</div><div class="live-count" data-ends="${esc(d.startsAt)}">${timeLeft(d.startsAt)}</div>
+        <div class="muted">${new Date(d.startsAt).toLocaleString([], { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div></div>`
+      : `<div><div style="font-size:42px">📺</div><b>We're not live right now</b><p class="muted">Follow along next time — meanwhile, watch our <a href="/videos" data-link style="color:var(--blue-2)">product videos</a>.</p></div>`}</div>`;
+  const name = (() => { try { return localStorage.getItem("lp_name") || ""; } catch { return ""; } })();
+  app.innerHTML = `<div class="wrap live-page">
+    <div class="live-main"><div class="live-player">${player}${badge}</div>
+      <div class="live-title"><h1>${esc(d.title || "Premium Live")}</h1>${d.note ? `<p class="muted">${esc(d.note)}</p>` : ""}</div>
+      ${pinned.length ? `<div class="live-pins"><h3>🛍 Featured in this live</h3><div class="rail">${pinned.map(card).join("")}</div></div>` : ""}</div>
+    <aside class="live-chat"><div class="lc-head"><b>Live chat</b><span class="muted" id="lcCount"></span></div>
+      <div class="lc-log" id="lcLog"></div>
+      <form class="lc-form" id="lcForm">${name ? "" : `<input name="name" placeholder="Your name" maxlength="40" required>`}<div class="flex" style="gap:8px"><input name="body" placeholder="Say something or ask a question…" maxlength="300" required autocomplete="off"><button class="btn accent">Send</button></div></form></aside></div>`;
+  const log = $("#lcLog");
+  const add = (cs) => { log.insertAdjacentHTML("beforeend", cs.map((c) => `<div class="lc-msg ${c.is_host ? "host" : ""}" data-cid="${c.id}"><b>${esc(c.name)}${c.is_host ? " ✓" : ""}</b> ${esc(c.body)}</div>`).join("")); log.scrollTop = log.scrollHeight; };
+  add(d.comments);
+  $("#lcForm").onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target, nm = f.name?.value?.trim() || name;
+    try { await api("/api/live/comment", { name: nm, body: f.body.value }); try { localStorage.setItem("lp_name", nm); } catch {} if (f.name) f.name.remove(); f.body.value = ""; poll(); }
+    catch (er) { toast(er.message); }
+  };
+  const poll = async () => {
+    if (location.pathname !== "/live") return clearInterval(LIVE.timer);
+    if (document.visibilityState !== "visible") return;
+    try {
+      const r = await api(`/api/live/comments?after=${LIVE.lastId}`);
+      if (r.comments.length) { add(r.comments); LIVE.lastId = r.comments[r.comments.length - 1].id; }
+      r.hidden.forEach((id) => log.querySelector(`[data-cid="${id}"]`)?.remove());
+      if (r.status !== LIVE.status || JSON.stringify(r.pinned) !== JSON.stringify(d.pinned)) livePage();
+    } catch {}
+  };
+  LIVE.timer = setInterval(poll, 4000);
 }
 
 function categoriesPage() {
@@ -340,10 +418,11 @@ function product(id) {
   const coll = COLLECTIONS.find((c) => c.id === p.collection) || { id: "all", name: "All products" };
   const stockTxt = p.stock === 0 ? `<div class="stock none">Sold out</div>` : p.stock < 60 ? `<div class="stock low">Only ${p.stock} left — order soon</div>` : `<div class="stock">In stock, ready to ship</div>`;
   app.innerHTML = `<div class="wrap"><div class="pdp">
-    <div class="gallery"><div class="main" id="mainImg">${art(p, 0)}</div><div class="thumbs">${[...Array(Math.min(4, p.images?.length || 4)).keys()].map((i) => `<button data-img="${i}" class="${i === 0 ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
+    <div class="gallery"><div class="main" id="mainImg">${p.video ? videoTag(p, true) : art(p, 0)}</div><div class="thumbs">${p.video ? `<button data-video class="on vthumb" aria-label="Play video">${art(p, 0)}<span>▶</span></button>` : ""}${[...Array(Math.min(4, p.images?.length || 4)).keys()].map((i) => `<button data-img="${i}" class="${i === 0 && !p.video ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
     <div><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/collections/${coll.id}" data-link>${esc(coll.name)}</a></div>
       <h1>${esc(p.title)}</h1>${p.sold ? `<div class="muted" style="font-size:14px">${p.sold.toLocaleString()} sold</div>` : ""}
-      ${p.promo ? `<div class="flash-bar"><span>⚡ ${esc(p.promo.label)}</span><span>Ends in <b data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</b></span></div>` : ""}
+      ${p.promo ? `<div class="flash-bar"><span>⚡ ${esc(p.promo.label)}</span><span>Ends in <b data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</b></span></div>`
+        : (() => { const s = schedFor(p); return s ? `<div class="sched-line big" style="margin-top:12px">📅 ${esc(s.label)}: ${s.percent}% off this item — ${esc(s.text)}</div>` : ""; })()}
       <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
       ${PROMO.vouchers.length ? `<div class="pdp-vouchers">${PROMO.vouchers.map((v) => `<button class="vchip" data-claim="${esc(v.code)}">🎟 ${v.percent}% off${v.min_spend ? ` · min ${money(v.min_spend)}` : ""}</button>`).join("")}</div>` : ""}
       ${p.price >= FREE_SHIP ? `<div class="perk">✓ Free US shipping on this item</div>` : `<div class="perk">Free US shipping on orders over ${money(FREE_SHIP)}</div>`}
@@ -368,8 +447,10 @@ function product(id) {
   }));
   app.querySelectorAll("[data-img]").forEach((b) => (b.onclick = () => {
     img = Number(b.dataset.img); $("#mainImg").innerHTML = art(p, img);
-    app.querySelectorAll("[data-img]").forEach((x) => x.classList.toggle("on", x === b));
+    app.querySelectorAll("[data-img], [data-video]").forEach((x) => x.classList.toggle("on", x === b));
   }));
+  const vb = app.querySelector("[data-video]");
+  if (vb) vb.onclick = () => { $("#mainImg").innerHTML = videoTag(p, true); app.querySelectorAll("[data-img], [data-video]").forEach((x) => x.classList.toggle("on", x === vb)); };
   $("#qMinus").onclick = () => { qty = Math.max(1, qty - 1); $("#qVal").value = qty; };
   $("#qPlus").onclick = () => { qty = Math.min(10, qty + 1); $("#qVal").value = qty; };
   $("#country").onchange = (e) => { country = e.target.value; setShopCountry(country); $("#eta").textContent = deliveryText(p, country); };
@@ -515,13 +596,15 @@ function notFound() { app.innerHTML = `<div class="wrap prose" style="text-align
 /* ---------- Router ---------- */
 function route() {
   const { pathname, search } = location, params = new URLSearchParams(search);
-  closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer);
+  closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); VFEED.obs?.disconnect();
   let m;
   if (pathname === "/") home();
   else if (pathname === "/search") collection("all", params);
   else if ((m = pathname.match(/^\/collections\/([\w-]+)$/))) collection(m[1], params);
   else if ((m = pathname.match(/^\/products\/([\w-]+)$/))) product(m[1]);
   else if (pathname === "/categories") categoriesPage();
+  else if (pathname === "/videos") videosPage();
+  else if (pathname === "/live") livePage();
   else if (pathname === "/cart") cartPage();
   else if (pathname === "/checkout") checkout();
   else if (pathname === "/thank-you") thankYou(params);
@@ -559,9 +642,9 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
   try {
     [PRODUCTS, COLLECTIONS, CONFIG, PROMO] = await Promise.all(["/api/products", "/api/collections", "/api/config", "/api/promos"].map((u) => fetch(u).then((r) => { if (!r.ok) throw 0; return r.json(); })));
   } catch { app.innerHTML = `<div class="wrap prose"><h1>Store is loading slowly</h1><p>Please refresh the page.</p></div>`; return; }
-  const link = (c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`, allLink = `<a href="/collections/all" data-link>Shop all</a><a href="/categories" data-link>Categories</a>`;
+  const link = (c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`, allLink = `<a href="/collections/all" data-link>Shop all</a><a href="/categories" data-link>Categories</a><a href="/live" data-link class="nav-live ${CONFIG.live?.status === "live" ? "on" : ""}">Premium Live</a><a href="/videos" data-link>Premium Video</a>`;
   const links = allLink + COLLECTIONS.map(link).join("");
-  $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 4).map(link).join("");
+  $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 2).map(link).join("");
   $("#mobileNav").innerHTML = links + `<a href="/track" data-link>Track order</a>`;
   $("#footerCollections").innerHTML = links;
   updateCount(); route();

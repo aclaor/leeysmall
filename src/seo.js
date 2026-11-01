@@ -85,6 +85,18 @@ async function pageFor(env, url, base) {
         <ul>${prods.map((p) => `<li><a href="/products/${p.id}">${esc(p.title)}</a> — ${money(p.price)}</li>`).join("")}</ul>`,
     };
   }
+  if (path === "/videos") {
+    const vids = (await env.DB.prepare("SELECT id, title, price FROM products WHERE active=1 AND video IS NOT NULL ORDER BY updated_at DESC LIMIT 60").all()).results;
+    return { status: 200, title: `Premium Video — Watch Before You Buy | ${BRAND}`, canonical: base + "/videos",
+      desc: `Watch product videos from ${BRAND} and shop straight from the video. ${vids.length} products with video.`,
+      body: `<h1>Premium Video</h1><ul>${vids.map((v) => `<li><a href="/products/${v.id}">${esc(v.title)}</a> — ${money(v.price)}</li>`).join("")}</ul>` };
+  }
+  if (path === "/live") {
+    const live = parse(await getSetting(env, "live"), {}) || {};
+    return { status: 200, title: `${live.status === "live" ? "🔴 LIVE: " : ""}${live.title || "Premium Live"} | ${BRAND}`, canonical: base + "/live",
+      desc: live.status === "live" ? `${BRAND} is live now — watch, ask questions and shop the products on screen.` : `Live shopping from ${BRAND}: watch demos, ask questions in the chat and get live-only deals.`,
+      body: `<h1>Premium Live</h1><p>${esc(live.title || "Live shopping with LeeysPremium")}</p>` };
+  }
   if (path === "/categories") {
     const cols = (await env.DB.prepare("SELECT c.id, c.name, c.blurb, COUNT(p.id) n FROM collections c LEFT JOIN products p ON p.collection=c.id AND p.active=1 GROUP BY c.id ORDER BY c.sort").all()).results;
     return { status: 200, title: `Shop by Category | ${BRAND}`, canonical: base + "/categories",
@@ -153,7 +165,7 @@ export async function sitemap(req, env) {
   const u = (loc, lastmod, pri, extra = "") => `<url><loc>${esc(loc)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>${pri}</priority>${extra}</url>`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
-${[u(base + "/", latest, "1.0"), u(base + "/collections/all", latest, "0.9"), u(base + "/categories", latest, "0.8"),
+${[u(base + "/", latest, "1.0"), u(base + "/collections/all", latest, "0.9"), u(base + "/categories", latest, "0.8"), u(base + "/videos", latest, "0.6"), u(base + "/live", null, "0.5"),
   ...cols.results.map((c) => u(`${base}/collections/${c.id}`, latest, "0.8")),
   ...prods.results.map((p) => u(`${base}/products/${p.id}`, day(p.updated_at), "0.7",
     parse(p.images, []).filter((x) => /^https?:/.test(x)).slice(0, 3).map((src) => `<image:image><image:loc>${esc(src)}</image:loc></image:image>`).join(""))),

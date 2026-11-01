@@ -32,7 +32,7 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
@@ -44,7 +44,7 @@ window.addEventListener("hashchange", () => { const t = location.hash.slice(1); 
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, orders, messages, products, import: importCj, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, orders, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
 
@@ -210,7 +210,7 @@ async function products() {
       <b>${n} selected</b><div class="flex" style="flex-wrap:wrap;gap:8px">
         <button class="btn sm accent" data-bulk="publish">Publish</button><button class="btn sm ghost" data-bulk="hide">Hide</button>
         <select class="inp" id="bcat" style="width:auto;padding:7px 10px"><option value="">Move to category…</option>${collections.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
-        <button class="btn sm ghost" id="bflash">⚡ Flash sale…</button>
+        <button class="btn sm ghost" id="bflash">⚡ Sale…</button>
         <select class="inp" id="bmk" style="width:auto;padding:7px 10px"><option value="">Set price markup…</option>${[2, 2.5, 3, 3.5, 4].map((x) => `<option value="${x}">${x}× cost</option>`).join("")}</select>
         <button class="btn sm danger" data-bulk="delete">Delete</button><button class="btn sm ghost" id="bclear">Clear</button></div></div>` : "";
     if (!n) return;
@@ -224,15 +224,16 @@ async function products() {
     }));
     $("#bcat").onchange = (e) => e.target.value && run("category", { collection: e.target.value });
     $("#bflash").onclick = () => {
-      const m = modal(`<h2>⚡ Flash sale for ${n} product${n === 1 ? "" : "s"}</h2><form id="fsf" class="form-grid">
+      const m = modal(`<h2>⚡ Sale for ${n} product${n === 1 ? "" : "s"}</h2><form id="fsf" class="form-grid">
         <label>Name shown to shoppers<input class="inp" name="label" value="Flash Sale" maxlength="60" required></label>
-        <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="20" required></label>
-        <label>Length<select class="inp" name="hours"><option value="3">3 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option></select></label>
-        <div class="full flex"><button class="btn accent">Start now</button><button type="button" class="btn ghost" id="fsc">Cancel</button></div></form>`);
+        <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="10" required></label>
+        ${whenFields()}
+        <div class="full flex"><button class="btn accent">Save sale</button><button type="button" class="btn ghost" id="fsc">Cancel</button></div></form>`);
       $("#fsc", m).onclick = () => m.remove();
+      bindWhen($("#fsf", m));
       $("#fsf", m).onsubmit = async (e) => { e.preventDefault(); const f = e.target;
-        try { await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: "products", target: [...ps.selected], endsAt: new Date(Date.now() + Number(f.hours.value) * 36e5).toISOString() });
-          m.remove(); toast("Flash sale is live"); } catch (er) { toast(er.message); } };
+        try { await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: "products", target: [...ps.selected], ...readWhen(f) });
+          m.remove(); toast("Sale saved"); } catch (er) { toast(er.message); } };
     };
     $("#bmk").onchange = (e) => e.target.value && confirm(`Reprice ${n} product${n === 1 ? "" : "s"} to ${e.target.value}× their cost?`) ? run("markup", { markup: Number(e.target.value) }) : (e.target.value = "");
     $("#bclear").onclick = () => { ps.selected.clear(); renderTable(); };
@@ -295,7 +296,7 @@ function productModal(p) {
       <label class="full">Title<input class="inp" name="title" required value="${esc(p.title)}"></label>
       <label class="full">Description<textarea class="inp" name="description">${esc(p.description)}</textarea></label>
       <label>Price (USD)<input class="inp" name="price" type="number" step="0.01" required value="${p.price ?? ""}"></label>
-      <label>Compare-at price<input class="inp" name="compareAt" type="number" step="0.01" value="${p.compareAt ?? ""}"></label>
+      <label>Discounts<span class="muted" style="font-weight:400;font-size:12.5px;padding-top:10px">Crossed-out prices only appear during a real promotion. Set sales in <a href="#promos" style="color:var(--blue-2)">Promotions</a>.</span></label>
       <label>Your cost (supplier price)<input class="inp" name="cost" type="number" step="0.01" value="${p.cost ?? ""}"></label>
       <label>Stock<input class="inp" name="stock" type="number" value="${p.stock}"></label>
       <label>Collection<select class="inp" name="collection"><option value="">None</option>${collections.map((c) => `<option value="${c.id}" ${c.id === p.collection ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
@@ -303,16 +304,28 @@ function productModal(p) {
       <label>Ships from<select class="inp" name="ships"><option value="intl">China / overseas</option><option value="us" ${p.ships === "us" ? "selected" : ""}>US warehouse</option></select></label>
       ${isNew ? `<label>Supplier<select class="inp" name="supplier"><option value="aliexpress">AliExpress (manual)</option><option value="manual">Other (manual)</option></select></label>` : `<label>Supplier<input class="inp" disabled value="${esc(SUPPLIER[p.supplier] || p.supplier)}"></label>`}
       <label class="full">Supplier link (where you order it)<input class="inp" name="supplierUrl" value="${esc(p.supplierUrl || "")}" placeholder="https://www.aliexpress.com/item/..."></label>
+      ${isNew ? "" : `<div class="full"><b style="font-size:13px;color:var(--ink-2)">Product video</b><div class="flex" style="gap:10px;flex-wrap:wrap;margin-top:6px">
+        ${p.video ? `<video src="${esc(p.video)}" muted controls style="width:160px;border-radius:10px;background:#000"></video><button type="button" class="btn sm ghost" id="pvRemove">Remove video</button>` : `<span class="muted" style="font-size:13px">No video yet</span>`}
+        <input type="file" id="pvFile" accept="video/mp4,video/quicktime,video/webm" class="inp" style="max-width:280px"><button type="button" class="btn sm accent" id="pvUp">Upload video</button><span id="pvProg" class="muted" style="font-size:13px"></span></div></div>`}
       <label class="full">Image URLs (one per line)<textarea class="inp" name="images">${esc((p.images || []).join("\n"))}</textarea></label>
       <label class="full">Options (one per line, e.g. “Color: Black, White”)<textarea class="inp" name="variants" ${p.supplier === "cj" ? "disabled" : ""}>${esc(vtxt)}</textarea></label>
       <label class="full" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active" ${p.active ? "checked" : ""}> Visible in store</label>
       <div class="full flex"><button class="btn">${isNew ? "Create" : "Save"}</button><button type="button" class="btn ghost" id="pc">Cancel</button>${isNew ? "" : `<button type="button" class="btn danger" id="pd" style="margin-left:auto">Delete</button>`}</div></form>`);
   $("#pc", m).onclick = () => m.remove();
+  const pvUp = $("#pvUp", m);
+  if (pvUp) pvUp.onclick = async () => {
+    const file = $("#pvFile", m).files[0]; if (!file) return toast("Choose a video file first");
+    pvUp.disabled = true;
+    try { await uploadVideo(file, { productId: p.id, kind: "product", title: p.title }, (x) => ($("#pvProg", m).textContent = `Uploading… ${Math.round(x * 100)}%`)); m.remove(); toast("Video added to product"); products(); }
+    catch (er) { toast(er.message); pvUp.disabled = false; $("#pvProg", m).textContent = ""; }
+  };
+  const pvRm = $("#pvRemove", m);
+  if (pvRm) pvRm.onclick = async () => { await api("/api/admin/products/" + p.id, "PATCH", { video: "" }); m.remove(); toast("Video removed from product"); products(); };
   const del = $("#pd", m);
   if (del) del.onclick = async () => { if (!confirm("Delete this product permanently?")) return; await api("/api/admin/products/" + p.id, "DELETE"); m.remove(); toast("Deleted"); products(); };
   $("#pf", m).onsubmit = async (e) => {
     e.preventDefault(); const f = e.target;
-    const data = { title: f.title.value, description: f.description.value, price: f.price.value, compareAt: f.compareAt.value, cost: f.cost.value, stock: f.stock.value,
+    const data = { title: f.title.value, description: f.description.value, price: f.price.value, cost: f.cost.value, stock: f.stock.value,
       collection: f.collection.value, badge: f.badge.value, ships: f.ships.value, supplierUrl: f.supplierUrl.value, active: f.active.checked,
       images: f.images.value.split("\n").map((x) => x.trim()).filter(Boolean) };
     if (!f.variants.disabled) data.variants = f.variants.value.split("\n").map((l) => l.split(":")).filter((x) => x.length === 2 && x[1].trim())
@@ -494,37 +507,166 @@ async function discounts() {
 
 /* ---------- Promotions (flash sales) ---------- */
 const localInput = (d) => { const x = new Date(d - new Date().getTimezoneOffset() * 60000); return x.toISOString().slice(0, 16); };
+// Shared "when does it run" fields: one-time (start/end) or weekly (days + hours + time zone)
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const TZS = [["America/New_York", "US Eastern (ET)"], ["America/Chicago", "US Central (CT)"], ["America/Denver", "US Mountain (MT)"], ["America/Los_Angeles", "US Pacific (PT)"], ["Asia/Manila", "Philippines"], ["UTC", "UTC"]];
+const hourOpts = (sel, isEnd) => [...Array(24).keys()].map((h) => h + (isEnd ? 1 : 0)).map((h) => `<option value="${h}" ${h === sel ? "selected" : ""}>${h === 0 || h === 24 ? "12 am" + (h === 24 ? " (midnight)" : "") : h === 12 ? "12 pm" : h < 12 ? h + " am" : h - 12 + " pm"}</option>`).join("");
+function whenFields(defaults = {}) {
+  return `<label class="full">When<div class="chips" style="margin-top:2px"><label class="chip on" data-mode="once"><input type="radio" name="mode" value="once" checked hidden> One-time sale</label>
+      <label class="chip" data-mode="weekly"><input type="radio" name="mode" value="weekly" hidden> Repeat weekly</label></div></label>
+    <div class="full form-grid" data-when="once">
+      <label>Quick length<select class="inp" name="plen"><option value="">Custom</option><option value="3">3 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option></select></label><span></span>
+      <label>Starts<input class="inp" type="datetime-local" name="startsAt" value="${localInput(Date.now())}"></label>
+      <label>Ends<input class="inp" type="datetime-local" name="endsAt" value="${localInput(Date.now() + 864e5)}"></label></div>
+    <div class="full form-grid" data-when="weekly" hidden>
+      <label class="full">Days<div class="chips" style="margin-top:2px">${DAYS.map((d, i) => `<label class="chip ${i === (defaults.day ?? 5) ? "on" : ""}"><input type="checkbox" name="days" value="${i}" ${i === (defaults.day ?? 5) ? "checked" : ""} hidden>${d}</label>`).join("")}</div></label>
+      <label>From<select class="inp" name="startHour">${hourOpts(0)}</select></label>
+      <label>Until<select class="inp" name="endHour">${hourOpts(24, true)}</select></label>
+      <label>Time zone<select class="inp" name="tz">${TZS.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></label>
+      <label>Stop repeating on (optional)<input class="inp" type="date" name="until"></label></div>`;
+}
+function bindWhen(form) {
+  const setMode = (mode) => {
+    form.querySelectorAll("[data-mode]").forEach((c) => c.classList.toggle("on", c.dataset.mode === mode));
+    form.querySelectorAll("[data-when]").forEach((b) => (b.hidden = b.dataset.when !== mode));
+  };
+  form.querySelectorAll("[data-mode]").forEach((c) => (c.onclick = () => { c.querySelector("input").checked = true; setMode(c.dataset.mode); }));
+  form.querySelectorAll('input[name="days"]').forEach((cb) => cb.parentElement.addEventListener("click", (e) => { e.preventDefault(); cb.checked = !cb.checked; cb.parentElement.classList.toggle("on", cb.checked); }));
+  form.plen.onchange = (e) => { if (!e.target.value) return; const s0 = new Date(form.startsAt.value || Date.now()); form.endsAt.value = localInput(s0.getTime() + Number(e.target.value) * 36e5); };
+}
+function readWhen(form) {
+  if (form.mode.value === "weekly") {
+    return { recur: true, days: [...form.querySelectorAll('input[name="days"]:checked')].map((x) => Number(x.value)), startHour: Number(form.startHour.value), endHour: Number(form.endHour.value),
+      tz: form.tz.value, endsAt: form.until.value ? new Date(form.until.value + "T23:59:59").toISOString() : null };
+  }
+  return { startsAt: new Date(form.startsAt.value).toISOString(), endsAt: new Date(form.endsAt.value).toISOString() };
+}
+
 async function promos() {
   const list = await api("/api/admin/promos");
   const scopeText = (p) => p.scope === "all" ? "Whole store" : p.scope === "collection" ? (collections.find((c) => c.id === p.target)?.name || p.target) : `${JSON.parse(p.target || "[]").length} selected products`;
   const when = (t) => new Date(t.replace(" ", "T") + "Z").toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  main().innerHTML = `<h1>Promotions</h1><p class="muted" style="margin-top:-8px">Real, time-limited sales. Prices drop automatically at the start time — on product cards, product pages, checkout, PayPal and Google — and go back at the end time. Shoppers see a live countdown to your real end time.</p>
+  const runs = (p) => p.recur ? `<b style="color:#fff">${esc(p.schedule)}</b>${p.ends_at.startsWith("2099") ? "" : `<br><span class="muted">until ${when(p.ends_at)}</span>`}` : `${when(p.starts_at)} → ${when(p.ends_at)}`;
+  const stateTag = { live: '<span class="st delivered">Live now</span>', waiting: '<span class="st processing">Repeats weekly</span>', scheduled: '<span class="st processing">Scheduled</span>', ended: '<span class="st">Ended</span>' };
+  main().innerHTML = `<h1>Promotions</h1><p class="muted" style="margin-top:-8px">Real sales with real end times. Prices drop automatically while a promotion runs — on product cards, product pages, checkout, PayPal and Google — and go back afterwards. Only products in a running promotion show a crossed-out price.</p>
     <form class="panel" id="pf"><div class="form-grid">
-      <label>Name shown to shoppers<input class="inp" name="label" placeholder="e.g. Flash Sale, 11.11 Sale, Weekend Deal" maxlength="60" required></label>
-      <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="15" required></label>
-      <label>Applies to<select class="inp" name="scope"><option value="all">Whole store</option>${collections.map((c) => `<option value="c:${c.id}">Category: ${esc(c.name)}</option>`).join("")}</select></label>
-      <label>Quick length<select class="inp" id="plen"><option value="">Custom</option><option value="3">3 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option></select></label>
-      <label>Starts<input class="inp" type="datetime-local" name="startsAt" value="${localInput(Date.now())}"></label>
-      <label>Ends<input class="inp" type="datetime-local" name="endsAt" value="${localInput(Date.now() + 864e5)}" required></label>
-      <div class="full flex"><button class="btn accent">Start promotion</button><span class="muted" style="font-size:13px">Tip: for specific products, tick them in Products and choose “Flash sale…”.</span></div></div></form>
+      <label>Name shown to shoppers<input class="inp" name="label" placeholder="e.g. Flash Sale, Friday Tech Deal, Weekend Sale" maxlength="60" required></label>
+      <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="10" required></label>
+      <label class="full">Applies to<select class="inp" name="scope"><option value="all">Whole store</option>${collections.map((c) => `<option value="c:${c.id}">Category: ${esc(c.name)}</option>`).join("")}</select></label>
+      ${whenFields()}
+      <div class="full flex"><button class="btn accent">Save promotion</button><span class="muted" style="font-size:13px">For specific products: tick them in Products → “⚡ Sale…”.</span></div></div></form>
     <div class="panel tbl-wrap" style="padding:6px 10px">${list.length ? `<table><tr><th>Promotion</th><th>Discount</th><th>Applies to</th><th>Runs</th><th>Status</th><th></th></tr>
-      ${list.map((p) => `<tr><td><b>${esc(p.label)}</b></td><td>${p.percent}% off</td><td>${esc(scopeText(p))}</td><td style="font-size:13px">${when(p.starts_at)} → ${when(p.ends_at)}</td>
-        <td>${p.state === "live" ? '<span class="st delivered">Live</span>' : p.state === "scheduled" ? '<span class="st processing">Scheduled</span>' : '<span class="st">Ended</span>'}</td>
-        <td class="flex" style="gap:6px">${p.state !== "ended" ? `<button class="btn sm ghost" data-pend="${p.id}">End now</button>` : ""}<button class="btn sm ghost" data-pdel="${p.id}">Delete</button></td></tr>`).join("")}</table>`
-      : `<p class="muted" style="padding:12px">No promotions yet. Create one above — it appears instantly as a ⚡ Flash Sale on the store.</p>`}</div>`;
+      ${list.map((p) => `<tr><td><b>${esc(p.label)}</b></td><td>${p.percent}% off</td><td>${esc(scopeText(p))}</td><td style="font-size:13px">${runs(p)}</td>
+        <td>${stateTag[p.state] || ""}</td>
+        <td class="flex" style="gap:6px">${p.state !== "ended" ? `<button class="btn sm ghost" data-pend="${p.id}">End</button>` : ""}<button class="btn sm ghost" data-pdel="${p.id}">Delete</button></td></tr>`).join("")}</table>`
+      : `<p class="muted" style="padding:12px">No promotions yet. Example: name “Tech Friday”, 10%, Category: Electronics, Repeat weekly → Fri.</p>`}</div>`;
   const f = $("#pf");
-  $("#plen").onchange = (e) => { if (!e.target.value) return; const s = new Date(f.startsAt.value || Date.now()); f.endsAt.value = localInput(s.getTime() + Number(e.target.value) * 36e5); };
+  bindWhen(f);
   f.onsubmit = async (e) => {
     e.preventDefault();
     const sc = f.scope.value;
     try {
-      await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: sc === "all" ? "all" : "collection", target: sc.startsWith("c:") ? sc.slice(2) : null,
-        startsAt: new Date(f.startsAt.value).toISOString(), endsAt: new Date(f.endsAt.value).toISOString() });
+      await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: sc === "all" ? "all" : "collection", target: sc.startsWith("c:") ? sc.slice(2) : null, ...readWhen(f) });
       toast("Promotion saved"); promos();
     } catch (er) { toast(er.message); }
   };
-  main().querySelectorAll("[data-pend]").forEach((b) => (b.onclick = async () => { await api("/api/admin/promos/" + b.dataset.pend, "PATCH"); toast("Promotion ended"); promos(); }));
+  main().querySelectorAll("[data-pend]").forEach((b) => (b.onclick = async () => { if (!confirm("End this promotion now? Weekly promotions stop repeating.")) return; await api("/api/admin/promos/" + b.dataset.pend, "PATCH"); toast("Promotion ended"); promos(); }));
   main().querySelectorAll("[data-pdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this promotion?")) return; await api("/api/admin/promos/" + b.dataset.pdel, "DELETE"); promos(); }));
+}
+
+/* ---------- Video upload helper (chunked → R2) ---------- */
+async function uploadVideo(file, meta, onProgress) {
+  if (file.size > 1024 * 1024 * 1024) throw new Error("Please keep videos under 1 GB");
+  const CH = 25 * 1024 * 1024;
+  const st = await api("/api/admin/media/start", "POST", { name: file.name, type: file.type });
+  const n = Math.max(1, Math.ceil(file.size / CH)), parts = [];
+  for (let i = 0; i < n; i++) {
+    const r = await fetch(`/api/admin/media/part?key=${encodeURIComponent(st.key)}&uploadId=${encodeURIComponent(st.uploadId)}&n=${i + 1}`, { method: "PUT", body: file.slice(i * CH, (i + 1) * CH) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "Upload failed");
+    parts.push(j); onProgress?.((i + 1) / n);
+  }
+  return api("/api/admin/media/complete", "POST", { key: st.key, uploadId: st.uploadId, parts, ...meta });
+}
+const fmtSize = (b) => (b > 1e9 ? (b / 1e9).toFixed(1) + " GB" : (b / 1e6).toFixed(1) + " MB");
+
+/* ---------- Live & Video ---------- */
+let liveTimer = null;
+async function liveAdmin() {
+  clearInterval(liveTimer);
+  const [lv, media, prods] = await Promise.all([api("/api/admin/live"), api("/api/admin/media"), api("/api/admin/products")]);
+  const live = { status: "off", pinned: [], ...lv };
+  const pinned = new Set(live.pinned || []);
+  const liveVids = media.items;
+  const setupMsg = media.ready ? "" : `<div class="panel warn">Video uploads need Cloudflare R2. Create the bucket <b>leeyspremium-media</b> (Storage & Databases → R2 → Create bucket) and let Claude know to connect it. Live streaming via YouTube/Facebook links works already.</div>`;
+  main().innerHTML = `<h1>Live & Video</h1>${setupMsg}
+    <form class="panel" id="lf"><div class="row-between"><b style="font-size:16px">🔴 Premium Live</b><a class="btn sm ghost" href="/live" target="_blank">Open live page ↗</a></div>
+      <p class="muted" style="font-size:13px;margin:6px 0 14px">How to go live: start a live on <b>YouTube</b> or <b>Facebook</b> from your phone (or OBS), paste its link here and choose <b>Live now</b>. Shoppers watch on your site, see the products you pin, and chat with you. Uploaded videos can be shown as a <b>Replay</b> — they're labelled Replay, never LIVE, so shoppers aren't misled.</p>
+      <div class="form-grid">
+        <label class="full">Status<div class="chips">${[["off", "Off"], ["scheduled", "📅 Scheduled"], ["live", "🔴 Live now"], ["replay", "▶ Replay"]].map(([v, t]) => `<label class="chip ${live.status === v ? "on" : ""}" data-ls="${v}"><input type="radio" name="status" value="${v}" ${live.status === v ? "checked" : ""} hidden>${t}</label>`).join("")}</div></label>
+        <label class="full">Title<input class="inp" name="title" value="${esc(live.title || "")}" placeholder="e.g. Friday Tech Deals — live demos & Q&A" maxlength="120"></label>
+        <label class="full">YouTube Live / Facebook Live link<input class="inp" name="url" value="${esc(live.url || "")}" placeholder="https://www.youtube.com/live/… or https://www.facebook.com/…/videos/…"></label>
+        <label>Starts at (for Scheduled)<input class="inp" type="datetime-local" name="startsAt" value="${live.startsAt ? localInput(new Date(live.startsAt).getTime()) : ""}"></label>
+        <label>Replay video (uploaded)<select class="inp" name="mediaId"><option value="">— none —</option>${liveVids.map((v) => `<option value="${v.id}" ${Number(live.mediaId) === v.id ? "selected" : ""}>${esc(v.title || v.key.split("/").pop())}</option>`).join("")}</select></label>
+        <label class="full">Note under the video (optional)<input class="inp" name="note" value="${esc(live.note || "")}" placeholder="e.g. Live-only: 15% off everything shown — ends when the live ends" maxlength="200"></label>
+        <div class="full"><b style="font-size:13px;color:var(--ink-2)">Featured products (${pinned.size})</b><input class="inp" id="pinq" placeholder="Search products to feature…" style="margin:6px 0">
+          <div id="pinlist" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:6px"></div></div>
+        <div class="full flex" style="flex-wrap:wrap;gap:10px"><button class="btn accent">Save live settings</button>
+          <button type="button" class="btn ghost" id="liveDeal">⚡ Live deal on featured products…</button></div></div></form>
+    <div class="panel"><div class="row-between"><b style="font-size:16px">💬 Live chat</b><button class="btn sm ghost" id="lcClear">Clear chat</button></div>
+      <form id="hostf" class="flex" style="margin:12px 0;gap:8px"><input class="inp" name="body" placeholder="Reply as LeeysPremium (shown with a ✓)…" maxlength="300"><button class="btn sm accent">Send</button></form>
+      <div id="lcAdmin" style="max-height:320px;overflow:auto"></div></div>
+    <div class="panel"><b style="font-size:16px">▶ Videos</b><p class="muted" style="font-size:13px;margin:6px 0 12px">Upload a product video (shows on the product page, on product cards as “▶ Video”, and in the Premium Video feed) or a live replay. MP4 works best; up to 1 GB.</p>
+      <form id="vf" class="form-grid"><label>Video file<input class="inp" type="file" name="file" accept="video/mp4,video/quicktime,video/webm" required ${media.ready ? "" : "disabled"}></label>
+        <label>Use as<select class="inp" name="target"><option value="">Live replay</option>${prods.filter((x) => x.active).map((x) => `<option value="${x.id}">Product: ${esc(x.title.slice(0, 60))}</option>`).join("")}</select></label>
+        <label class="full">Title (optional)<input class="inp" name="title" maxlength="120"></label>
+        <div class="full flex"><button class="btn accent" ${media.ready ? "" : "disabled"}>Upload</button><span id="vprog" class="muted"></span></div></form>
+      <div class="tbl-wrap" style="margin-top:12px">${media.items.length ? `<table><tr><th>Video</th><th>Used for</th><th>Size</th><th>Added</th><th></th></tr>${media.items.map((v) => `<tr><td><a href="${esc(v.url)}" target="_blank" style="color:var(--blue-2)">${esc(v.title || v.key.split("/").pop())}</a></td>
+        <td>${v.product_id ? esc(v.product_title || v.product_id) : "Live replay"}</td><td>${fmtSize(v.size || 0)}</td><td>${date(v.created_at)}</td><td><button class="btn sm ghost" data-vdel="${v.id}">Delete</button></td></tr>`).join("")}</table>` : `<p class="muted">No videos yet.</p>`}</div></div>`;
+
+  const f = $("#lf");
+  f.querySelectorAll("[data-ls]").forEach((c) => (c.onclick = () => { c.querySelector("input").checked = true; f.querySelectorAll("[data-ls]").forEach((x) => x.classList.toggle("on", x === c)); }));
+  const renderPins = () => {
+    const q = $("#pinq").value.toLowerCase();
+    const rows = prods.filter((x) => x.active && (!q || x.title.toLowerCase().includes(q))).sort((a, b) => pinned.has(b.id) - pinned.has(a.id)).slice(0, 60);
+    $("#pinlist").innerHTML = rows.map((x) => `<label class="flex" style="padding:6px;gap:10px;cursor:pointer"><input type="checkbox" data-pin="${x.id}" ${pinned.has(x.id) ? "checked" : ""}>${thumb(x)}<span>${esc(x.title.slice(0, 70))}</span><span class="muted" style="margin-left:auto">${money(x.price)}</span></label>`).join("") || `<p class="muted">No matches</p>`;
+    $("#pinlist").querySelectorAll("[data-pin]").forEach((c) => (c.onchange = () => { c.checked ? pinned.add(c.dataset.pin) : pinned.delete(c.dataset.pin); }));
+  };
+  $("#pinq").oninput = renderPins; renderPins();
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/admin/live", "PUT", { status: f.status.value, title: f.title.value, url: f.url.value, mediaId: f.mediaId.value || null, note: f.note.value,
+        startsAt: f.startsAt.value ? new Date(f.startsAt.value).toISOString() : null, pinned: [...pinned] });
+      toast(f.status.value === "live" ? "🔴 You're live on the store" : "Live settings saved"); liveAdmin();
+    } catch (er) { toast(er.message); }
+  };
+  $("#liveDeal").onclick = async () => {
+    if (!pinned.size) return toast("Feature some products first");
+    const pct = prompt("Live-only discount on the featured products (%)", "15"); if (!pct) return;
+    const hrs = prompt("How many hours should the deal last?", "2"); if (!hrs) return;
+    try { await api("/api/admin/promos", "POST", { label: "Live deal", percent: pct, scope: "products", target: [...pinned], endsAt: new Date(Date.now() + Number(hrs) * 36e5).toISOString() }); toast("Live deal is on — prices updated with a countdown"); }
+    catch (er) { toast(er.message); }
+  };
+  const loadChat = async () => {
+    if (tab !== "live" || !$("#lcAdmin")) return clearInterval(liveTimer);
+    const cs = await api("/api/admin/live/comments").catch(() => []);
+    $("#lcAdmin").innerHTML = cs.length ? cs.map((c) => `<div class="row-between" style="padding:6px 0;border-bottom:1px solid var(--line);gap:10px;${c.hidden ? "opacity:.4" : ""}"><span><b style="color:${c.is_host ? "#fff" : "#8fc8ff"}">${esc(c.name)}${c.is_host ? " ✓" : ""}</b> ${esc(c.body)}</span>
+      <span class="flex" style="gap:6px;flex:none"><span class="muted" style="font-size:12px">${date(c.created_at)}</span>${c.hidden ? "<span class='muted' style='font-size:12px'>hidden</span>" : `<button class="btn sm ghost" data-hide="${c.id}">Hide</button>`}</span></div>`).join("") : `<p class="muted">No comments yet.</p>`;
+    $("#lcAdmin").querySelectorAll("[data-hide]").forEach((b) => (b.onclick = async () => { await api("/api/admin/live/comments/" + b.dataset.hide, "DELETE"); loadChat(); }));
+  };
+  loadChat(); liveTimer = setInterval(loadChat, 5000);
+  $("#hostf").onsubmit = async (e) => { e.preventDefault(); const t = e.target.body.value.trim(); if (!t) return; try { await api("/api/admin/live/comment", "POST", { body: t }); e.target.body.value = ""; loadChat(); } catch (er) { toast(er.message); } };
+  $("#lcClear").onclick = async () => { if (!confirm("Delete all live chat messages?")) return; await api("/api/admin/live/clear", "POST"); loadChat(); };
+  $("#vf").onsubmit = async (e) => {
+    e.preventDefault(); const fm = e.target, file = fm.file.files[0]; if (!file) return;
+    const btn = fm.querySelector("button"); btn.disabled = true;
+    try {
+      await uploadVideo(file, { productId: fm.target.value || null, kind: fm.target.value ? "product" : "live", title: fm.title.value || file.name.replace(/\.[^.]+$/, "") }, (x) => ($("#vprog").textContent = `Uploading… ${Math.round(x * 100)}%`));
+      toast("Video uploaded"); liveAdmin();
+    } catch (er) { toast(er.message); btn.disabled = false; $("#vprog").textContent = ""; }
+  };
+  main().querySelectorAll("[data-vdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this video permanently?")) return; await api("/api/admin/media/" + b.dataset.vdel, "DELETE"); toast("Video deleted"); liveAdmin(); }));
 }
 
 /* ---------- Subscribers ---------- */

@@ -1,5 +1,6 @@
 import { classify } from "../public/classify.js";
-import { activePromos, priced } from "./promos.js";
+import { activePromos, priced, schedules, windowEnd, scheduleText } from "./promos.js";
+import { mediaReady, startUpload, uploadPart, completeUpload, deleteObject, serveMedia, embedUrl } from "./media.js";
 import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
@@ -145,7 +146,7 @@ async function handle(req, env, ctx) {
   await ensureSchema(env);
 
   if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES, country: req.cf?.country || "US",
-    heroSlides: parse(await getSetting(env, "hero_slides"), []) });
+    heroSlides: parse(await getSetting(env, "hero_slides"), []), live: (({ status, title }) => ({ status: status || "off", title: title || "" }))(parse(await getSetting(env, "live"), {}) || {}) });
 
   if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb,cover FROM collections ORDER BY sort").all()).results);
   if (path === "/api/products") {
@@ -157,9 +158,10 @@ async function handle(req, env, ctx) {
     return r ? json({ ...toPublic(r), ...priced(r, await activePromos(env)) }) : bad("Not found", 404);
   }
   if (path === "/api/promos") {
-    const [promos, vouchers] = await Promise.all([activePromos(env),
+    const [promos, sched, vouchers] = await Promise.all([activePromos(env), schedules(env),
       env.DB.prepare("SELECT code, percent, min_spend FROM discounts WHERE active=1 AND show=1 ORDER BY percent DESC").all().then((r) => r.results)]);
-    return json({ promos: promos.map((x) => ({ id: x.id, label: x.label, percent: x.percent, scope: x.scope, target: x.scope === "products" ? x.targets : x.target, endsAt: x.ends_at.replace(" ", "T") + "Z" })), vouchers });
+    return json({ promos: promos.map((x) => ({ id: x.id, label: x.label, percent: x.percent, scope: x.scope, target: x.scope === "products" ? x.targets : x.target, endsAt: x.endsAt, recurring: !!x.recur })),
+      schedules: sched, vouchers });
   }
   /* ---------- live chat (customer side) ---------- */
   if (path === "/api/chat/send" && m === "POST") {
@@ -193,6 +195,30 @@ async function handle(req, env, ctx) {
     const msgs = (await env.DB.prepare("SELECT id, sender, body, created_at FROM chat_messages WHERE chat_id=? AND id>? ORDER BY id LIMIT 200").bind(c.id, after).all()).results;
     if (url.searchParams.get("seen") === "1" && c.unread_customer) await env.DB.prepare("UPDATE chats SET unread_customer=0 WHERE id=?").bind(c.id).run();
     return json({ messages: msgs, unread: c.unread_customer });
+  }
+  /* ---------- Premium Live (public) ---------- */
+  if (path === "/api/live") {
+    const live = parse(await getSetting(env, "live"), {}) || {};
+    const comments = (await env.DB.prepare("SELECT id, name, body, is_host, created_at FROM live_comments WHERE hidden=0 ORDER BY id DESC LIMIT 60").all()).results.reverse();
+    let video = null;
+    if (live.mediaId) { const md = await env.DB.prepare("SELECT key FROM media WHERE id=?").bind(live.mediaId).first(); if (md) video = "/media/" + md.key; }
+    return json({ status: live.status || "off", title: live.title || "", startsAt: live.startsAt || null, embed: embedUrl(live.url), video, pinned: live.pinned || [], note: live.note || "", comments });
+  }
+  if (path === "/api/live/comments") {
+    const after = parseInt(url.searchParams.get("after")) || 0;
+    const rows = (await env.DB.prepare("SELECT id, name, body, is_host, created_at FROM live_comments WHERE hidden=0 AND id>? ORDER BY id LIMIT 100").bind(after).all()).results;
+    const hiddenIds = (await env.DB.prepare("SELECT id FROM live_comments WHERE hidden=1 AND id > ? - 200").bind(after).all()).results.map((r) => r.id);
+    const live = parse(await getSetting(env, "live"), {}) || {};
+    return json({ comments: rows, hidden: hiddenIds, status: live.status || "off", pinned: live.pinned || [] });
+  }
+  if (path === "/api/live/comment" && m === "POST") {
+    const b = await body(req), name = str(b.name, 40), text = str(b.body, 300);
+    if (!name || !text) return bad("Add your name and a comment");
+    const ip = req.headers.get("cf-connecting-ip") || "local";
+    const n = await env.DB.prepare("SELECT COUNT(*) n FROM live_comments WHERE ip=? AND created_at > datetime('now','-1 minute')").bind(ip).first();
+    if (n.n >= 6) return bad("Slow down a little — you can comment again in a minute", 429);
+    await env.DB.prepare("INSERT INTO live_comments (name, body, ip) VALUES (?,?,?)").bind(name, text, ip).run();
+    return json({ ok: true });
   }
   if (path === "/api/subscribe" && m === "POST") {
     const e = str((await body(req)).email, 200).toLowerCase();
@@ -338,8 +364,8 @@ async function admin(req, env, ctx, path, m, url) {
       const mk = Number(b.markup);
       if (!(mk >= 1.1 && mk <= 10)) return bad("Markup must be between 1.1 and 10");
       // price = cost × markup, rounded to .99; compare-at 60% higher. Skips products with no cost.
-      sql = "UPDATE products SET price=MAX(0.99, CAST(cost*?+0.999 AS INTEGER)-0.01), compare_at=MAX(0.99, CAST(cost*?*1.6+0.999 AS INTEGER)-0.01), updated_at=datetime('now') WHERE id=? AND cost>0";
-      extra = [mk, mk];
+      sql = "UPDATE products SET price=MAX(0.99, CAST(cost*?+0.999 AS INTEGER)-0.01), compare_at=NULL, updated_at=datetime('now') WHERE id=? AND cost>0";
+      extra = [mk];
     } else return bad("Unknown action");
     for (let i = 0; i < ids.length; i += 90)
       await env.DB.batch(ids.slice(i, i + 90).map((id) => env.DB.prepare(sql).bind(...extra, id)));
@@ -363,6 +389,7 @@ async function admin(req, env, ctx, path, m, url) {
         else v = v === "" ? null : str(v, 3000);
         sets.push(col + "=?"); vals.push(v);
       }
+      if ("video" in b) { const v = str(b.video, 500); if (v && !/^(https:\/\/|\/media\/)/.test(v)) return bad("Video must be an uploaded video or an https:// link to an MP4"); sets.push("video=?"); vals.push(v || null); }
       if ("images" in b) { sets.push("images=?"); vals.push(JSON.stringify((b.images || []).map((x) => str(x, 500)).filter(Boolean).slice(0, 10))); }
       if ("variants" in b) { sets.push("variants=?"); vals.push(JSON.stringify(b.variants || [])); }
       if (!sets.length) return bad("Nothing to update");
@@ -401,8 +428,63 @@ async function admin(req, env, ctx, path, m, url) {
     await env.DB.batch([env.DB.prepare("UPDATE products SET collection=NULL WHERE collection=?").bind(p[1]), env.DB.prepare("DELETE FROM collections WHERE id=?").bind(p[1])]);
     return json({ ok: true });
   }
+  /* ---------- Videos (R2) ---------- */
+  if (path === "/api/admin/media" && m === "GET") {
+    const rows = (await env.DB.prepare("SELECT m.*, p.title AS product_title FROM media m LEFT JOIN products p ON p.id=m.product_id ORDER BY m.created_at DESC LIMIT 300").all()).results;
+    return json({ ready: mediaReady(env), items: rows.map((r) => ({ ...r, url: "/media/" + r.key })) });
+  }
+  try {
+    if (path === "/api/admin/media/start" && m === "POST") { const b = await body(req); return json(await startUpload(env, str(b.name, 200), str(b.type, 100))); }
+    if (path === "/api/admin/media/part" && m === "PUT") {
+      return json(await uploadPart(env, str(url.searchParams.get("key"), 300), str(url.searchParams.get("uploadId"), 500), parseInt(url.searchParams.get("n")), req.body));
+    }
+    if (path === "/api/admin/media/complete" && m === "POST") {
+      const b = await body(req), key = str(b.key, 300);
+      const r = await completeUpload(env, key, str(b.uploadId, 500), b.parts || []);
+      const productId = str(b.productId, 100) || null;
+      const ins = await env.DB.prepare("INSERT INTO media (key, title, kind, product_id, size) VALUES (?,?,?,?,?)").bind(key, str(b.title, 120) || null, b.kind === "live" ? "live" : "product", productId, r.size).run();
+      if (productId) {
+        await env.DB.prepare("UPDATE products SET video=?, updated_at=datetime('now') WHERE id=?").bind("/media/" + key, productId).run();
+        ctx.waitUntil(pingIndexNow(env, siteUrl(env, req), ["/products/" + productId]).catch(() => {}));
+      }
+      return json({ id: ins.meta?.last_row_id, key, url: "/media/" + key, size: r.size });
+    }
+  } catch (e) { return bad(e.message, e.status || 500); }
+  if ((p = path.match(/^\/api\/admin\/media\/(\d+)$/)) && m === "DELETE") {
+    const md = await env.DB.prepare("SELECT * FROM media WHERE id=?").bind(Number(p[1])).first();
+    if (!md) return bad("Not found", 404);
+    await deleteObject(env, md.key);
+    await env.DB.batch([env.DB.prepare("UPDATE products SET video=NULL WHERE video=?").bind("/media/" + md.key), env.DB.prepare("DELETE FROM media WHERE id=?").bind(md.id)]);
+    return json({ ok: true });
+  }
+  /* ---------- Premium Live (admin) ---------- */
+  if (path === "/api/admin/live" && m === "GET") return json({ ...(parse(await getSetting(env, "live"), {}) || {}), mediaReady: mediaReady(env) });
+  if (path === "/api/admin/live" && m === "PUT") {
+    const b = await body(req);
+    const status = ["off", "scheduled", "live", "replay"].includes(b.status) ? b.status : "off";
+    const live = { status, title: str(b.title, 120), url: str(b.url, 500), mediaId: b.mediaId ? Number(b.mediaId) : null, startsAt: b.startsAt || null,
+      note: str(b.note, 200), pinned: (b.pinned || []).map((x) => str(x, 100)).slice(0, 30) };
+    if (status === "live" && !embedUrl(live.url)) return bad("To go live, paste your YouTube Live or Facebook Live link");
+    if (status === "replay" && !live.mediaId && !embedUrl(live.url)) return bad("Choose an uploaded video (or a YouTube/Facebook link) for the replay");
+    if (status === "scheduled" && !live.startsAt) return bad("Choose when the live starts");
+    await setSetting(env, "live", JSON.stringify(live));
+    return json({ ok: true });
+  }
+  if (path === "/api/admin/live/comment" && m === "POST") {
+    const text = str((await body(req)).body, 300);
+    if (!text) return bad("Type a message");
+    await env.DB.prepare("INSERT INTO live_comments (name, body, is_host) VALUES ('LeeysPremium', ?, 1)").bind(text).run();
+    return json({ ok: true });
+  }
+  if (path === "/api/admin/live/comments") return json((await env.DB.prepare("SELECT id, name, body, is_host, hidden, created_at FROM live_comments ORDER BY id DESC LIMIT 200").all()).results);
+  if ((p = path.match(/^\/api\/admin\/live\/comments\/(\d+)$/)) && m === "DELETE") {
+    await env.DB.prepare("UPDATE live_comments SET hidden=1 WHERE id=?").bind(Number(p[1])).run();
+    return json({ ok: true });
+  }
+  if (path === "/api/admin/live/clear" && m === "POST") { await env.DB.prepare("DELETE FROM live_comments").run(); return json({ ok: true }); }
   if (path === "/api/admin/promos" && m === "GET") {
-    return json((await env.DB.prepare("SELECT *, CASE WHEN active=1 AND starts_at<=datetime('now') AND ends_at>datetime('now') THEN 'live' WHEN active=1 AND starts_at>datetime('now') THEN 'scheduled' ELSE 'ended' END state FROM promos ORDER BY created_at DESC LIMIT 100").all()).results);
+    const rows = (await env.DB.prepare("SELECT *, CASE WHEN active=1 AND starts_at<=datetime('now') AND ends_at>datetime('now') THEN 'live' WHEN active=1 AND starts_at>datetime('now') THEN 'scheduled' ELSE 'ended' END state FROM promos ORDER BY created_at DESC LIMIT 100").all()).results;
+    return json(rows.map((r) => r.recur ? { ...r, schedule: scheduleText(r), state: r.state === "live" ? (windowEnd(r) ? "live" : "waiting") : r.state } : r));
   }
   if (path === "/api/admin/promos" && m === "POST") {
     const b = await body(req), pct = Number(b.percent), label = str(b.label, 60) || `${pct}% off`;
@@ -411,9 +493,20 @@ async function admin(req, env, ctx, path, m, url) {
     const target = scope === "collection" ? str(b.target, 40) : scope === "products" ? JSON.stringify((b.target || []).map((x) => str(x, 100)).slice(0, 2000)) : null;
     if (scope !== "all" && (!target || target === "[]")) return bad("Choose what the promotion applies to");
     const iso = (v) => { const d = new Date(v); return isNaN(d) ? null : d.toISOString().slice(0, 19).replace("T", " "); };
-    const starts = b.startsAt ? iso(b.startsAt) : iso(Date.now()), ends = iso(b.endsAt);
+    const recur = !!b.recur;
+    const starts = b.startsAt ? iso(b.startsAt) : iso(Date.now()), ends = b.endsAt ? iso(b.endsAt) : recur ? "2099-12-31 00:00:00" : null;
     if (!ends || ends <= starts) return bad("Choose an end time after the start time");
-    const r = await env.DB.prepare("INSERT INTO promos (label, percent, scope, target, starts_at, ends_at) VALUES (?,?,?,?,?,?)").bind(label, pct, scope, target, starts, ends).run();
+    let days = null, sh = 0, eh = 24, tz = "America/New_York";
+    if (recur) {
+      days = [...new Set((b.days || []).map(Number).filter((d) => d >= 0 && d <= 6))].sort().join(",");
+      sh = Math.max(0, Math.min(23, parseInt(b.startHour) || 0)); eh = Math.max(1, Math.min(24, parseInt(b.endHour) || 24));
+      tz = str(b.tz, 60) || tz;
+      try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); } catch { return bad("Unknown time zone"); }
+      if (!days) return bad("Pick at least one day of the week");
+      if (eh <= sh) return bad("The end hour must be after the start hour");
+    }
+    const r = await env.DB.prepare("INSERT INTO promos (label, percent, scope, target, starts_at, ends_at, recur, days, start_hour, end_hour, tz) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(label, pct, scope, target, starts, ends, recur ? 1 : 0, days, sh, eh, tz).run();
     const ids = scope === "products" ? JSON.parse(target) : (await env.DB.prepare(scope === "all" ? "SELECT id FROM products WHERE active=1" : "SELECT id FROM products WHERE active=1 AND collection=?").bind(...(scope === "all" ? [] : [target])).all()).results.map((x) => x.id);
     ctx.waitUntil(pingIndexNow(env, siteUrl(env, req), ids.map((id) => "/products/" + id)).catch(() => {}));
     return json({ ok: true, id: r.meta?.last_row_id });
@@ -532,6 +625,7 @@ export default {
           const site = new URL(env.SITE_URL);
           if (url.hostname !== site.hostname && !path.startsWith("/admin")) return Response.redirect(site.origin + path + url.search, 301);
         }
+        if (path.startsWith("/media/")) return await serveMedia(req, env, decodeURIComponent(path.slice(7)));
         if (path === "/sitemap.xml") return await sitemap(req, env);
         if (path === "/robots.txt") return robots(req, env);
         const k = path.match(/^\/indexnow-([a-f0-9]{32})\.txt$/);

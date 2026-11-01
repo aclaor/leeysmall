@@ -26,6 +26,8 @@ const SCHEMA = [
     unread_admin INTEGER DEFAULT 0, unread_customer INTEGER DEFAULT 0, last_body TEXT, last_from TEXT, last_at TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chat_msgs ON chat_messages(chat_id, id)`,
+  `CREATE TABLE IF NOT EXISTS media (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, title TEXT, kind TEXT DEFAULT 'product', product_id TEXT, size INTEGER, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS live_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, body TEXT NOT NULL, is_host INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0, ip TEXT, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS promos (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, percent REAL NOT NULL, scope TEXT NOT NULL DEFAULT 'all', target TEXT,
     starts_at TEXT DEFAULT (datetime('now')), ends_at TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chats_last ON chats(last_at)`,
@@ -39,7 +41,9 @@ export function ensureSchema(env) {
     if (n === 0) await seed(env);
     await migrateToGeneralStore(env);
     for (const sql of ["ALTER TABLE collections ADD COLUMN cover TEXT", "ALTER TABLE products ADD COLUMN sold INTEGER DEFAULT 0",
-      "ALTER TABLE discounts ADD COLUMN min_spend REAL DEFAULT 0", "ALTER TABLE discounts ADD COLUMN show INTEGER DEFAULT 0"])
+      "ALTER TABLE discounts ADD COLUMN min_spend REAL DEFAULT 0", "ALTER TABLE discounts ADD COLUMN show INTEGER DEFAULT 0",
+      "ALTER TABLE promos ADD COLUMN recur INTEGER DEFAULT 0", "ALTER TABLE products ADD COLUMN video TEXT", "ALTER TABLE promos ADD COLUMN days TEXT", "ALTER TABLE promos ADD COLUMN start_hour INTEGER DEFAULT 0",
+      "ALTER TABLE promos ADD COLUMN end_hour INTEGER DEFAULT 24", "ALTER TABLE promos ADD COLUMN tz TEXT DEFAULT 'America/New_York'"])
       try { await env.DB.prepare(sql).run(); } catch {} // column already exists
   })().catch((e) => { ready = null; throw e; });
   return ready;
@@ -76,7 +80,7 @@ const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d
 export function toPublic(r) {
   return {
     id: r.id, title: r.title, description: r.description, collection: r.collection, price: r.price,
-    compareAt: r.compare_at, stock: r.stock, rating: r.rating, reviews: r.reviews, badge: r.badge, sold: r.sold || 0, createdAt: r.created_at,
+    compareAt: null, stock: r.stock, rating: r.rating, reviews: r.reviews, badge: r.badge, sold: r.sold || 0, createdAt: r.created_at, video: r.video || null,
     hue: r.hue, icon: r.icon, ships: r.ships, images: parse(r.images, []), variants: parse(r.variants, []),
   };
 }

@@ -110,7 +110,7 @@ export function cjToRecord(p, { markup = 2.5, collection = "", ships = "intl" } 
   for (const v of p.variants) variantMap[v.key] = { vid: v.vid, cost: v.cost, image: v.image };
   const slug = (p.title || "product").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) + "-" + String(p.pid).slice(-5).toLowerCase();
   return {
-    id: slug, title: (p.title || "").slice(0, 120), description: p.description, collection, price, compare_at: round(price * 1.6), cost,
+    id: slug, title: (p.title || "").slice(0, 120), description: p.description, collection, price, compare_at: null, cost,
     stock: 100, images: JSON.stringify(p.images), ships, supplier: "cj", supplier_pid: p.pid,
     variants: JSON.stringify(p.variants.length > 1 ? [{ name: "Option", options: p.variants.map((v) => v.key) }] : []),
     variant_map: JSON.stringify(variantMap),
