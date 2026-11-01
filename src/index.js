@@ -1,3 +1,4 @@
+import { classify } from "../public/classify.js";
 import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
@@ -431,7 +432,12 @@ async function admin(req, env, ctx, path, m, url) {
       const d = await cjProduct(env, str(b.pid, 80));
       let st = { total: 100, us: false };
       if (d.variants[0]) try { st = await cjStock(env, d.variants[0].vid); } catch {}
-      const rec = cjToRecord(d, { markup: Number(b.markup) || 2.5, collection: str(b.collection, 40), ships: st.us ? "us" : "intl" });
+      let collection = str(b.collection, 40);
+      if (!collection || collection === "auto") {
+        const allowed = (await env.DB.prepare("SELECT id FROM collections").all()).results.map((c) => c.id);
+        collection = classify({ title: d.title, category: str(b.cjCategory, 300), description: d.description }, allowed)?.id || null;
+      }
+      const rec = cjToRecord(d, { markup: Number(b.markup) || 2.5, collection, ships: st.us ? "us" : "intl" });
       rec.stock = Math.min(st.total || 0, 999) || 100;
       await env.DB.prepare(`INSERT OR REPLACE INTO products (id,title,description,collection,price,compare_at,cost,stock,images,variants,variant_map,supplier,supplier_pid,ships,reviews,rating,active)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,5,?)`).bind(rec.id, rec.title, rec.description, rec.collection, rec.price, rec.compare_at, rec.cost, rec.stock,

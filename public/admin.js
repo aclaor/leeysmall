@@ -1,4 +1,5 @@
 // LeeysPremium admin dashboard
+import { classify } from "/classify.js";
 const $ = (s, el = document) => el.querySelector(s);
 const root = $("#root");
 const money = (n) => "$" + Number(n || 0).toFixed(2);
@@ -171,7 +172,7 @@ async function products() {
   const ids = new Set(list.map((p) => p.id));
   for (const id of [...ps.selected]) if (!ids.has(id)) ps.selected.delete(id);
   const counts = { all: list.length, draft: list.filter((p) => !p.active).length, live: list.filter((p) => p.active).length };
-  main().innerHTML = `<div class="row-between"><h1>Products</h1><div class="flex"><a class="btn sm ghost" href="#import">Import from CJ</a><button class="btn sm" id="addP">Add product</button></div></div>
+  main().innerHTML = `<div class="row-between"><h1>Products</h1><div class="flex"><button class="btn sm accent" id="autoSort">✨ Auto-sort categories</button><a class="btn sm ghost" href="#import">Import from CJ</a><button class="btn sm" id="addP">Add product</button></div></div>
     <div class="chips" style="margin-bottom:12px">${[["", `All (${counts.all})`], ["draft", `Drafts (${counts.draft})`], ["live", `Live (${counts.live})`]].map(([v, t]) => `<button class="chip ${ps.status === v ? "on" : ""}" data-status="${v}">${t}</button>`).join("")}</div>
     <div class="panel flex" style="flex-wrap:wrap;gap:10px;padding:14px">
       <input class="inp" id="pq" placeholder="Search products…" value="${esc(ps.q)}" style="flex:2;min-width:200px">
@@ -229,7 +230,50 @@ async function products() {
   $("#pcat").onchange = (e) => { ps.cat = e.target.value; renderTable(); };
   $("#psup").onchange = (e) => { ps.supplier = e.target.value; renderTable(); };
   $("#addP").onclick = () => productModal(null);
+  $("#autoSort").onclick = () => autoSortModal(list);
   renderTable();
+}
+function autoSortModal(list) {
+  const ids = collections.map((c) => c.id), cname = (id) => collections.find((c) => c.id === id)?.name || "No category";
+  const rows = [];
+  let unsure = 0;
+  for (const p of list) {
+    const r = classify({ title: p.title, description: p.description }, ids);
+    if (!r) { if (!ids.includes(p.collection)) unsure++; continue; }
+    if (r.id !== p.collection) rows.push({ p, to: r.id, sure: r.sure, on: r.sure });
+  }
+  rows.sort((a, b) => (b.sure - a.sure) || a.to.localeCompare(b.to));
+  const sel = (r, i) => `<select class="inp" data-to="${i}" style="padding:6px 8px;width:auto;max-width:180px">${collections.map((c) => `<option value="${c.id}" ${c.id === r.to ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`;
+  const summary = () => { const by = {}; rows.filter((r) => r.on).forEach((r) => (by[r.to] = (by[r.to] || 0) + 1)); return Object.entries(by).map(([k, n]) => `${esc(cname(k))} ${n}`).join(" · ") || "nothing selected"; };
+  const m = modal(`<div class="row-between" style="gap:10px;flex-wrap:wrap"><h2 style="margin:0">✨ Auto-sort categories</h2><button class="btn sm ghost" id="asClose">Close</button></div>
+    <p class="muted" style="margin:8px 0 14px">Each product's name and description was checked to suggest its best category. <b style="color:#fff">${rows.filter((r) => r.sure).length}</b> confident suggestions are ticked; <b style="color:var(--warn)">${rows.filter((r) => !r.sure).length}</b> less certain ones are unticked — tick the ones that look right, or change the category in the dropdown.${unsure ? ` ${unsure} uncategorised product${unsure === 1 ? "" : "s"} couldn't be matched and stay as they are.` : ""}</p>
+    ${rows.length ? `<div class="flex" style="gap:8px;margin-bottom:10px;flex-wrap:wrap"><button class="btn sm ghost" id="asAll">Tick all</button><button class="btn sm ghost" id="asSure">Only confident</button><button class="btn sm ghost" id="asNone">Untick all</button></div>
+    <div class="tbl-wrap" style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:14px"><table><tr><th style="width:30px"></th><th>Product</th><th>Now</th><th>Move to</th></tr>
+      ${rows.map((r, i) => `<tr><td><input type="checkbox" data-as="${i}" ${r.on ? "checked" : ""}></td><td><div class="flex">${thumb(r.p)}<span style="color:#fff">${esc(r.p.title.slice(0, 80))}</span></div></td>
+        <td class="muted">${esc(cname(r.p.collection))}</td><td>${sel(r, i)} ${r.sure ? "" : `<span class="st paid" title="Less certain — please check">check</span>`}</td></tr>`).join("")}</table></div>
+    <div class="row-between" style="margin-top:14px;gap:10px;flex-wrap:wrap"><span class="muted" id="asSum" style="font-size:13px"></span><button class="btn accent" id="asApply">Apply</button></div>`
+    : `<p style="color:var(--good)">Everything already looks correctly sorted. 🎉</p>`}`);
+  const upd = () => { const n = rows.filter((r) => r.on).length; const b = $("#asApply", m); if (b) { b.textContent = `Move ${n} product${n === 1 ? "" : "s"}`; b.disabled = !n; $("#asSum", m).innerHTML = summary(); } };
+  $("#asClose", m).onclick = () => m.remove();
+  m.querySelectorAll("[data-as]").forEach((c) => (c.onchange = () => { rows[c.dataset.as].on = c.checked; upd(); }));
+  m.querySelectorAll("[data-to]").forEach((s2) => (s2.onchange = () => { const r = rows[s2.dataset.to]; r.to = s2.value; r.on = true; m.querySelector(`[data-as="${s2.dataset.to}"]`).checked = true; upd(); }));
+  const setAll = (fn) => { rows.forEach((r, i) => { r.on = fn(r); m.querySelector(`[data-as="${i}"]`).checked = r.on; }); upd(); };
+  if (rows.length) {
+    $("#asAll", m).onclick = () => setAll(() => true);
+    $("#asSure", m).onclick = () => setAll((r) => r.sure);
+    $("#asNone", m).onclick = () => setAll(() => false);
+    $("#asApply", m).onclick = async (e) => {
+      const groups = {};
+      rows.filter((r) => r.on).forEach((r) => (groups[r.to] ||= []).push(r.p.id));
+      e.target.disabled = true; e.target.textContent = "Moving…";
+      try {
+        let n = 0;
+        for (const [to, ids2] of Object.entries(groups)) { await api("/api/admin/products/bulk", "POST", { ids: ids2, action: "category", collection: to }); n += ids2.length; }
+        m.remove(); toast(`Moved ${n} products into the right categories`); products();
+      } catch (er) { toast(er.message); upd(); }
+    };
+    upd();
+  }
 }
 function productModal(p) {
   const isNew = !p; p = p || { title: "", description: "", price: "", compareAt: "", cost: "", stock: 100, images: [], variants: [], supplier: "aliexpress", active: true, ships: "intl" };
@@ -277,9 +321,12 @@ const AUTO_RULES = [
   ["fashion", /cloth|apparel|fashion|bag|shoe|jewel|watch|dress|wear|luggage/i],
   ["home-kitchen", /home|garden|furniture|kitchen|household|appliance|improvement|tool|light|decor|bed/i],
 ];
-const autoCategory = (path) => {
+// Best store category for a CJ item: product name first, CJ category second. "" = not sure (left uncategorised).
+const autoCategory = (path, title = "") => {
+  const r = classify({ title, category: path }, collections.map((c) => c.id));
+  if (r) return r.id;
   for (const [id, re] of AUTO_RULES) if (re.test(path || "") && collections.some((c) => c.id === id)) return id;
-  return collections[0]?.id || "";
+  return "";
 };
 let cjTree = null;
 const cjState = { lv1: "", lv2: "", lv3: "", preset: "", q: "", us: false, sort: "popular", page: 1, target: "auto", markup: 2.5, publish: false, selected: new Map(), results: null };
@@ -354,8 +401,8 @@ function renderResults() {
   const st = cjState, r = st.results, res = $("#res");
   if (!r || !res) return;
   if (!r.items.length) { res.innerHTML = `<p class="muted">No products found. Try another category or turn off “US warehouse only”.</p>`; return; }
-  const target = (i) => (st.target === "auto" ? autoCategory(i.category) : st.target);
-  const cname = (id) => collections.find((c) => c.id === id)?.name || "—";
+  const target = (i) => (st.target === "auto" ? autoCategory(i.category, i.title) : st.target);
+  const cname = (id) => collections.find((c) => c.id === id)?.name || "No category (sort later)";
   const fresh = r.items.filter((i) => !i.imported);
   res.innerHTML = `<div class="row-between" style="margin:6px 0 12px;flex-wrap:wrap;gap:10px">
       <span class="muted">${r.total.toLocaleString()} products · page ${r.page} of ${r.totalPages}</span>
@@ -405,7 +452,7 @@ async function bulkImport() {
   for (const [k, i] of items.entries()) {
     renderBulk({ text: `Importing ${k + 1} of ${items.length}: ${i.title.slice(0, 60)}…`, pct: (k / items.length) * 100 });
     try {
-      const r = await api("/api/admin/cj/import", "POST", { pid: i.pid, markup: st.markup, publish: st.publish, collection: st.target === "auto" ? autoCategory(i.category) : st.target });
+      const r = await api("/api/admin/cj/import", "POST", { pid: i.pid, markup: st.markup, publish: st.publish, collection: st.target === "auto" ? autoCategory(i.category, i.title) || "auto" : st.target, cjCategory: i.category });
       r.alreadyImported ? skip++ : ok++;
       i.imported = r.id; st.selected.delete(i.pid);
     } catch (e) { fail.push(i.title.slice(0, 40) + ": " + e.message); }
