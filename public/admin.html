@@ -57,6 +57,8 @@
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .form-grid label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
     .form-grid .full { grid-column: 1 / -1; }
+    .form-grid label.flex { display: flex; align-items: center; font-weight: 500; color: var(--ink); }
+    .form-grid label.flex:hover { background: rgba(255,255,255,.04); border-radius: 10px; }
     .modal-bg { position: fixed; inset: 0; background: rgba(2,4,10,.65); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); z-index: 80; display: grid; place-items: start center; overflow: auto; padding: 40px 16px; }
     .modal { background: rgba(10,16,34,.96); border: 1px solid var(--line-2); border-radius: 22px; width: min(780px, 100%); padding: 26px; box-shadow: var(--shadow), 0 0 60px rgba(47,140,255,.15); }
     .modal h2 { color: #fff; }

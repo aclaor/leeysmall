@@ -310,8 +310,24 @@ function productModal(p) {
       <label class="full">Image URLs (one per line)<textarea class="inp" name="images">${esc((p.images || []).join("\n"))}</textarea></label>
       <label class="full">Options (one per line, e.g. “Color: Black, White”)<textarea class="inp" name="variants" ${p.supplier === "cj" ? "disabled" : ""}>${esc(vtxt)}</textarea></label>
       <label class="full" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active" ${p.active ? "checked" : ""}> Visible in store</label>
-      <div class="full flex"><button class="btn">${isNew ? "Create" : "Save"}</button><button type="button" class="btn ghost" id="pc">Cancel</button>${isNew ? "" : `<button type="button" class="btn danger" id="pd" style="margin-left:auto">Delete</button>`}</div></form>`);
+      <div class="full flex"><button class="btn">${isNew ? "Create" : "Save"}</button><button type="button" class="btn ghost" id="pc">Cancel</button>${isNew ? "" : `<button type="button" class="btn ghost" id="psale">⚡ Put on sale</button>`}${isNew ? "" : `<button type="button" class="btn danger" id="pd" style="margin-left:auto">Delete</button>`}</div></form>`);
   $("#pc", m).onclick = () => m.remove();
+  const psale = $("#psale", m);
+  if (psale) psale.onclick = () => {
+    const sm = modal(`<h2>⚡ Sale: ${esc(p.title.slice(0, 60))}</h2><p class="muted" style="margin-top:-6px">Now ${money(p.price)} — preview updates as you type.</p><form id="ssf" class="form-grid">
+      <label>Name shown to shoppers<input class="inp" name="label" value="Flash Sale" maxlength="60" required></label>
+      <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="10" required></label>
+      <div class="full" id="sprev" style="font-size:15px"></div>
+      ${whenFields()}
+      <div class="full flex"><button class="btn accent">Save sale</button><button type="button" class="btn ghost" id="ssc">Cancel</button></div></form>`);
+    const sf = $("#ssf", sm);
+    const prev = () => { const pct = Number(sf.percent.value) || 0; $("#sprev", sm).innerHTML = pct ? `Shoppers will see <b style="color:var(--blue-2)">${money(Math.round(p.price * (100 - pct)) / 100)}</b> <s class="muted">${money(p.price)}</s> while the sale runs.` : ""; };
+    sf.percent.oninput = prev; prev(); bindWhen(sf);
+    $("#ssc", sm).onclick = () => sm.remove();
+    sf.onsubmit = async (e) => { e.preventDefault();
+      try { await api("/api/admin/promos", "POST", { label: sf.label.value, percent: sf.percent.value, scope: "products", target: [p.id], ...readWhen(sf) }); sm.remove(); toast("Sale saved for this product"); }
+      catch (er) { toast(er.message); } };
+  };
   const pvUp = $("#pvUp", m);
   if (pvUp) pvUp.onclick = async () => {
     const file = $("#pvFile", m).files[0]; if (!file) return toast("Choose a video file first");
@@ -543,8 +559,10 @@ function readWhen(form) {
 }
 
 async function promos() {
-  const list = await api("/api/admin/promos");
-  const scopeText = (p) => p.scope === "all" ? "Whole store" : p.scope === "collection" ? (collections.find((c) => c.id === p.target)?.name || p.target) : `${JSON.parse(p.target || "[]").length} selected products`;
+  const [list, prods] = await Promise.all([api("/api/admin/promos"), api("/api/admin/products")]);
+  const picked = new Set();
+  const scopeText = (p) => p.scope === "all" ? "Whole store" : p.scope === "collection" ? (collections.find((c) => c.id === p.target)?.name || p.target) : (() => { const ids = JSON.parse(p.target || "[]"); const names = ids.map((id) => prods.find((x) => x.id === id)?.title).filter(Boolean);
+      return ids.length <= 2 && names.length ? names.map((n) => n.slice(0, 40)).join(", ") : `${ids.length} selected products`; })();
   const when = (t) => new Date(t.replace(" ", "T") + "Z").toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const runs = (p) => p.recur ? `<b style="color:#fff">${esc(p.schedule)}</b>${p.ends_at.startsWith("2099") ? "" : `<br><span class="muted">until ${when(p.ends_at)}</span>`}` : `${when(p.starts_at)} → ${when(p.ends_at)}`;
   const stateTag = { live: '<span class="st delivered">Live now</span>', waiting: '<span class="st processing">Repeats weekly</span>', scheduled: '<span class="st processing">Scheduled</span>', ended: '<span class="st">Ended</span>' };
@@ -552,9 +570,12 @@ async function promos() {
     <form class="panel" id="pf"><div class="form-grid">
       <label>Name shown to shoppers<input class="inp" name="label" placeholder="e.g. Flash Sale, Friday Tech Deal, Weekend Sale" maxlength="60" required></label>
       <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="10" required></label>
-      <label class="full">Applies to<select class="inp" name="scope"><option value="all">Whole store</option>${collections.map((c) => `<option value="c:${c.id}">Category: ${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="full">Applies to<select class="inp" name="scope"><option value="all">Whole store</option><option value="products">Specific products…</option>${collections.map((c) => `<option value="c:${c.id}">Category: ${esc(c.name)}</option>`).join("")}</select></label>
+      <div class="full" id="ppick" hidden><div class="row-between"><b style="font-size:13px;color:var(--ink-2)">Choose products <span id="pcount" style="color:var(--blue-2)">(0 selected)</span></b><button type="button" class="btn sm ghost" id="pclear">Clear</button></div>
+        <input class="inp" id="pq" placeholder="Search by product name…" style="margin:6px 0">
+        <div id="plist" style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:6px"></div></div>
       ${whenFields()}
-      <div class="full flex"><button class="btn accent">Save promotion</button><span class="muted" style="font-size:13px">For specific products: tick them in Products → “⚡ Sale…”.</span></div></div></form>
+      <div class="full flex"><button class="btn accent">Save promotion</button><span class="muted" style="font-size:13px">You can also tick products in Products → “⚡ Sale…”, or use “⚡ Put on sale” when editing a product.</span></div></div></form>
     <div class="panel tbl-wrap" style="padding:6px 10px">${list.length ? `<table><tr><th>Promotion</th><th>Discount</th><th>Applies to</th><th>Runs</th><th>Status</th><th></th></tr>
       ${list.map((p) => `<tr><td><b>${esc(p.label)}</b></td><td>${p.percent}% off</td><td>${esc(scopeText(p))}</td><td style="font-size:13px">${runs(p)}</td>
         <td>${stateTag[p.state] || ""}</td>
@@ -562,11 +583,23 @@ async function promos() {
       : `<p class="muted" style="padding:12px">No promotions yet. Example: name “Tech Friday”, 10%, Category: Electronics, Repeat weekly → Fri.</p>`}</div>`;
   const f = $("#pf");
   bindWhen(f);
+  const renderPick = () => {
+    const q = $("#pq").value.toLowerCase();
+    const rows = prods.filter((x) => x.active && (!q || x.title.toLowerCase().includes(q))).sort((a, b) => picked.has(b.id) - picked.has(a.id)).slice(0, 80);
+    $("#plist").innerHTML = rows.map((x) => `<label class="flex" style="padding:6px;gap:10px;cursor:pointer"><input type="checkbox" data-pp="${x.id}" ${picked.has(x.id) ? "checked" : ""}>${thumb(x)}<span>${esc(x.title.slice(0, 80))}</span><span class="muted" style="margin-left:auto;white-space:nowrap">${money(x.price)}</span></label>`).join("") || `<p class="muted" style="padding:8px">No matching products</p>`;
+    $("#plist").querySelectorAll("[data-pp]").forEach((c) => (c.onchange = () => { c.checked ? picked.add(c.dataset.pp) : picked.delete(c.dataset.pp); $("#pcount").textContent = `(${picked.size} selected)`; }));
+    $("#pcount").textContent = `(${picked.size} selected)`;
+  };
+  f.scope.onchange = () => { $("#ppick").hidden = f.scope.value !== "products"; if (!$("#ppick").hidden) { renderPick(); $("#pq").focus(); } };
+  $("#pq").oninput = renderPick;
+  $("#pclear").onclick = () => { picked.clear(); renderPick(); };
   f.onsubmit = async (e) => {
     e.preventDefault();
     const sc = f.scope.value;
+    if (sc === "products" && !picked.size) return toast("Choose at least one product");
     try {
-      await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: sc === "all" ? "all" : "collection", target: sc.startsWith("c:") ? sc.slice(2) : null, ...readWhen(f) });
+      await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: sc === "all" ? "all" : sc === "products" ? "products" : "collection",
+        target: sc === "products" ? [...picked] : sc.startsWith("c:") ? sc.slice(2) : null, ...readWhen(f) });
       toast("Promotion saved"); promos();
     } catch (er) { toast(er.message); }
   };
