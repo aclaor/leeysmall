@@ -26,6 +26,8 @@ const SCHEMA = [
     unread_admin INTEGER DEFAULT 0, unread_customer INTEGER DEFAULT 0, last_body TEXT, last_from TEXT, last_at TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chat_msgs ON chat_messages(chat_id, id)`,
+  `CREATE TABLE IF NOT EXISTS promos (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, percent REAL NOT NULL, scope TEXT NOT NULL DEFAULT 'all', target TEXT,
+    starts_at TEXT DEFAULT (datetime('now')), ends_at TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chats_last ON chats(last_at)`,
 ];
 
@@ -36,7 +38,9 @@ export function ensureSchema(env) {
     const { n } = await env.DB.prepare("SELECT COUNT(*) n FROM products").first();
     if (n === 0) await seed(env);
     await migrateToGeneralStore(env);
-    try { await env.DB.prepare("ALTER TABLE collections ADD COLUMN cover TEXT").run(); } catch {} // already added
+    for (const sql of ["ALTER TABLE collections ADD COLUMN cover TEXT", "ALTER TABLE products ADD COLUMN sold INTEGER DEFAULT 0",
+      "ALTER TABLE discounts ADD COLUMN min_spend REAL DEFAULT 0", "ALTER TABLE discounts ADD COLUMN show INTEGER DEFAULT 0"])
+      try { await env.DB.prepare(sql).run(); } catch {} // column already exists
   })().catch((e) => { ready = null; throw e; });
   return ready;
 }
@@ -72,7 +76,7 @@ const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d
 export function toPublic(r) {
   return {
     id: r.id, title: r.title, description: r.description, collection: r.collection, price: r.price,
-    compareAt: r.compare_at, stock: r.stock, rating: r.rating, reviews: r.reviews, badge: r.badge,
+    compareAt: r.compare_at, stock: r.stock, rating: r.rating, reviews: r.reviews, badge: r.badge, sold: r.sold || 0, createdAt: r.created_at,
     hue: r.hue, icon: r.icon, ships: r.ships, images: parse(r.images, []), variants: parse(r.variants, []),
   };
 }

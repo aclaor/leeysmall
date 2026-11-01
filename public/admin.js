@@ -32,7 +32,7 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["discounts", "Discounts"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
@@ -44,7 +44,7 @@ window.addEventListener("hashchange", () => { const t = location.hash.slice(1); 
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, orders, messages, products, import: importCj, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, orders, messages, products, import: importCj, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
 
@@ -210,6 +210,7 @@ async function products() {
       <b>${n} selected</b><div class="flex" style="flex-wrap:wrap;gap:8px">
         <button class="btn sm accent" data-bulk="publish">Publish</button><button class="btn sm ghost" data-bulk="hide">Hide</button>
         <select class="inp" id="bcat" style="width:auto;padding:7px 10px"><option value="">Move to category…</option>${collections.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
+        <button class="btn sm ghost" id="bflash">⚡ Flash sale…</button>
         <select class="inp" id="bmk" style="width:auto;padding:7px 10px"><option value="">Set price markup…</option>${[2, 2.5, 3, 3.5, 4].map((x) => `<option value="${x}">${x}× cost</option>`).join("")}</select>
         <button class="btn sm danger" data-bulk="delete">Delete</button><button class="btn sm ghost" id="bclear">Clear</button></div></div>` : "";
     if (!n) return;
@@ -222,6 +223,17 @@ async function products() {
       run(b.dataset.bulk);
     }));
     $("#bcat").onchange = (e) => e.target.value && run("category", { collection: e.target.value });
+    $("#bflash").onclick = () => {
+      const m = modal(`<h2>⚡ Flash sale for ${n} product${n === 1 ? "" : "s"}</h2><form id="fsf" class="form-grid">
+        <label>Name shown to shoppers<input class="inp" name="label" value="Flash Sale" maxlength="60" required></label>
+        <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="20" required></label>
+        <label>Length<select class="inp" name="hours"><option value="3">3 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option></select></label>
+        <div class="full flex"><button class="btn accent">Start now</button><button type="button" class="btn ghost" id="fsc">Cancel</button></div></form>`);
+      $("#fsc", m).onclick = () => m.remove();
+      $("#fsf", m).onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+        try { await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: "products", target: [...ps.selected], endsAt: new Date(Date.now() + Number(f.hours.value) * 36e5).toISOString() });
+          m.remove(); toast("Flash sale is live"); } catch (er) { toast(er.message); } };
+    };
     $("#bmk").onchange = (e) => e.target.value && confirm(`Reprice ${n} product${n === 1 ? "" : "s"} to ${e.target.value}× their cost?`) ? run("markup", { markup: Number(e.target.value) }) : (e.target.value = "");
     $("#bclear").onclick = () => { ps.selected.clear(); renderTable(); };
   };
@@ -465,12 +477,54 @@ async function bulkImport() {
 /* ---------- Discounts ---------- */
 async function discounts() {
   const list = await api("/api/admin/discounts");
-  main().innerHTML = `<h1>Discount codes</h1><form class="panel flex" id="df" style="flex-wrap:wrap"><input class="inp" name="code" placeholder="CODE" style="max-width:200px;text-transform:uppercase" required>
-    <input class="inp" name="percent" type="number" min="1" max="90" placeholder="% off" style="max-width:120px" required><button class="btn">Create code</button></form>
-    <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Code</th><th>Discount</th><th>Times used</th><th>Status</th><th></th></tr>
-    ${list.map((d) => `<tr><td><b>${esc(d.code)}</b></td><td>${d.percent}% off</td><td>${d.uses}</td><td>${d.active ? "Active" : "Disabled"}</td><td><button class="btn sm ghost" data-d="${esc(d.code)}" data-a="${d.active ? 0 : 1}">${d.active ? "Disable" : "Enable"}</button></td></tr>`).join("")}</table></div>`;
-  $("#df").onsubmit = async (e) => { e.preventDefault(); try { await api("/api/admin/discounts", "POST", { code: e.target.code.value, percent: e.target.percent.value }); toast("Code saved"); discounts(); } catch (er) { toast(er.message); } };
+  main().innerHTML = `<h1>Vouchers</h1><p class="muted" style="margin-top:-8px">Codes customers enter at checkout. Tick <b>Show on store</b> to display a voucher as a “Claim” coupon on the homepage, category pages and product pages — claimed vouchers apply automatically at checkout.</p>
+    <form class="panel flex" id="df" style="flex-wrap:wrap;gap:10px"><input class="inp" name="code" placeholder="CODE e.g. SAVE10" style="max-width:180px;text-transform:uppercase" required>
+    <input class="inp" name="percent" type="number" min="1" max="90" placeholder="% off" style="max-width:100px" required>
+    <input class="inp" name="minSpend" type="number" min="0" step="0.01" placeholder="Min. spend $ (optional)" style="max-width:190px">
+    <label class="flex" style="gap:6px;font-size:14px;color:var(--ink-2)"><input type="checkbox" name="show" checked> Show on store</label><button class="btn accent">Save voucher</button></form>
+    <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Code</th><th>Discount</th><th>Min. spend</th><th>Used</th><th>On store</th><th>Status</th><th></th></tr>
+    ${list.map((d) => `<tr><td><b>${esc(d.code)}</b></td><td>${d.percent}% off</td><td>${d.min_spend ? money(d.min_spend) : "—"}</td><td>${d.uses}</td>
+      <td><button class="st ${d.show ? "delivered" : ""}" data-show="${esc(d.code)}" data-v="${d.show ? 0 : 1}" style="cursor:pointer">${d.show ? "Shown" : "Hidden"}</button></td>
+      <td>${d.active ? "Active" : "Disabled"}</td><td><button class="btn sm ghost" data-d="${esc(d.code)}" data-a="${d.active ? 0 : 1}">${d.active ? "Disable" : "Enable"}</button></td></tr>`).join("")}</table></div>`;
+  $("#df").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { await api("/api/admin/discounts", "POST", { code: f.code.value, percent: f.percent.value, minSpend: f.minSpend.value, show: f.show.checked }); toast("Voucher saved"); discounts(); } catch (er) { toast(er.message); } };
   main().querySelectorAll("[data-d]").forEach((b) => (b.onclick = async () => { await api("/api/admin/discounts/" + b.dataset.d, "PATCH", { active: b.dataset.a === "1" }); discounts(); }));
+  main().querySelectorAll("[data-show]").forEach((b) => (b.onclick = async () => { await api("/api/admin/discounts/" + b.dataset.show, "PATCH", { show: b.dataset.v === "1" }); discounts(); }));
+}
+
+/* ---------- Promotions (flash sales) ---------- */
+const localInput = (d) => { const x = new Date(d - new Date().getTimezoneOffset() * 60000); return x.toISOString().slice(0, 16); };
+async function promos() {
+  const list = await api("/api/admin/promos");
+  const scopeText = (p) => p.scope === "all" ? "Whole store" : p.scope === "collection" ? (collections.find((c) => c.id === p.target)?.name || p.target) : `${JSON.parse(p.target || "[]").length} selected products`;
+  const when = (t) => new Date(t.replace(" ", "T") + "Z").toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  main().innerHTML = `<h1>Promotions</h1><p class="muted" style="margin-top:-8px">Real, time-limited sales. Prices drop automatically at the start time — on product cards, product pages, checkout, PayPal and Google — and go back at the end time. Shoppers see a live countdown to your real end time.</p>
+    <form class="panel" id="pf"><div class="form-grid">
+      <label>Name shown to shoppers<input class="inp" name="label" placeholder="e.g. Flash Sale, 11.11 Sale, Weekend Deal" maxlength="60" required></label>
+      <label>Discount (%)<input class="inp" name="percent" type="number" min="1" max="90" value="15" required></label>
+      <label>Applies to<select class="inp" name="scope"><option value="all">Whole store</option>${collections.map((c) => `<option value="c:${c.id}">Category: ${esc(c.name)}</option>`).join("")}</select></label>
+      <label>Quick length<select class="inp" id="plen"><option value="">Custom</option><option value="3">3 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option></select></label>
+      <label>Starts<input class="inp" type="datetime-local" name="startsAt" value="${localInput(Date.now())}"></label>
+      <label>Ends<input class="inp" type="datetime-local" name="endsAt" value="${localInput(Date.now() + 864e5)}" required></label>
+      <div class="full flex"><button class="btn accent">Start promotion</button><span class="muted" style="font-size:13px">Tip: for specific products, tick them in Products and choose “Flash sale…”.</span></div></div></form>
+    <div class="panel tbl-wrap" style="padding:6px 10px">${list.length ? `<table><tr><th>Promotion</th><th>Discount</th><th>Applies to</th><th>Runs</th><th>Status</th><th></th></tr>
+      ${list.map((p) => `<tr><td><b>${esc(p.label)}</b></td><td>${p.percent}% off</td><td>${esc(scopeText(p))}</td><td style="font-size:13px">${when(p.starts_at)} → ${when(p.ends_at)}</td>
+        <td>${p.state === "live" ? '<span class="st delivered">Live</span>' : p.state === "scheduled" ? '<span class="st processing">Scheduled</span>' : '<span class="st">Ended</span>'}</td>
+        <td class="flex" style="gap:6px">${p.state !== "ended" ? `<button class="btn sm ghost" data-pend="${p.id}">End now</button>` : ""}<button class="btn sm ghost" data-pdel="${p.id}">Delete</button></td></tr>`).join("")}</table>`
+      : `<p class="muted" style="padding:12px">No promotions yet. Create one above — it appears instantly as a ⚡ Flash Sale on the store.</p>`}</div>`;
+  const f = $("#pf");
+  $("#plen").onchange = (e) => { if (!e.target.value) return; const s = new Date(f.startsAt.value || Date.now()); f.endsAt.value = localInput(s.getTime() + Number(e.target.value) * 36e5); };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const sc = f.scope.value;
+    try {
+      await api("/api/admin/promos", "POST", { label: f.label.value, percent: f.percent.value, scope: sc === "all" ? "all" : "collection", target: sc.startsWith("c:") ? sc.slice(2) : null,
+        startsAt: new Date(f.startsAt.value).toISOString(), endsAt: new Date(f.endsAt.value).toISOString() });
+      toast("Promotion saved"); promos();
+    } catch (er) { toast(er.message); }
+  };
+  main().querySelectorAll("[data-pend]").forEach((b) => (b.onclick = async () => { await api("/api/admin/promos/" + b.dataset.pend, "PATCH"); toast("Promotion ended"); promos(); }));
+  main().querySelectorAll("[data-pdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this promotion?")) return; await api("/api/admin/promos/" + b.dataset.pdel, "DELETE"); promos(); }));
 }
 
 /* ---------- Subscribers ---------- */

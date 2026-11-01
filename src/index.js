@@ -1,4 +1,5 @@
 import { classify } from "../public/classify.js";
+import { activePromos, priced } from "./promos.js";
 import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
@@ -45,6 +46,7 @@ async function buildOrder(env, b) {
   if (!items.length) throw new Error("Your cart is empty");
   const ids = [...new Set(items.map((i) => str(i.id, 100)))];
   const rows = (await env.DB.prepare(`SELECT * FROM products WHERE active=1 AND id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all()).results;
+  const promos = await activePromos(env);
   const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
   const lines = [];
   for (const i of items) {
@@ -60,17 +62,18 @@ async function buildOrder(env, b) {
     }
     const vm = parse(p.variant_map, {});
     const vmEntry = vm[variant] || (Object.keys(vm).length === 1 ? Object.values(vm)[0] : null);
-    lines.push({ id: p.id, title: p.title, variant, qty, price: p.price, cost: vmEntry?.cost ?? p.cost, supplier: p.supplier, vid: vmEntry?.vid || null, ships: p.ships });
+    lines.push({ id: p.id, title: p.title, variant, qty, price: priced(p, promos).price, cost: vmEntry?.cost ?? p.cost, supplier: p.supplier, vid: vmEntry?.vid || null, ships: p.ships });
   }
   const subtotal = r2(lines.reduce((s, l) => s + l.price * l.qty, 0));
-  let discount = 0, code = null;
+  let discount = 0, code = null, codeNote = null;
   if (b.code) {
     const d = await env.DB.prepare("SELECT * FROM discounts WHERE code=? AND active=1").bind(str(b.code, 40).toUpperCase()).first();
-    if (d) { discount = r2(subtotal * d.percent / 100); code = d.code; }
+    if (d && subtotal >= (d.min_spend || 0)) { discount = r2(subtotal * d.percent / 100); code = d.code; }
+    else if (d) codeNote = `Add $${(d.min_spend - subtotal).toFixed(2)} more to use ${d.code}`;
   }
   const country = str(b.country, 2).toUpperCase() || "US";
   const shipping = shippingFor(country, subtotal - discount);
-  return { lines, subtotal, discount, code, shipping, country, total: r2(subtotal - discount + shipping), cost_total: r2(lines.reduce((s, l) => s + l.cost * l.qty, 0)) };
+  return { lines, subtotal, discount, code, codeNote, shipping, country, total: r2(subtotal - discount + shipping), cost_total: r2(lines.reduce((s, l) => s + l.cost * l.qty, 0)) };
 }
 
 async function fulfil(env, orderId) {
@@ -141,17 +144,22 @@ async function handle(req, env, ctx) {
   // Public config
   await ensureSchema(env);
 
-  if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES,
+  if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES, country: req.cf?.country || "US",
     heroSlides: parse(await getSetting(env, "hero_slides"), []) });
 
   if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb,cover FROM collections ORDER BY sort").all()).results);
   if (path === "/api/products") {
-    const rows = (await env.DB.prepare("SELECT * FROM products WHERE active=1 ORDER BY reviews DESC, created_at DESC").all()).results;
-    return json(rows.map(toPublic));
+    const [rows, promos] = await Promise.all([env.DB.prepare("SELECT * FROM products WHERE active=1 ORDER BY sold DESC, reviews DESC, created_at DESC").all().then((r) => r.results), activePromos(env)]);
+    return json(rows.map((r) => ({ ...toPublic(r), ...priced(r, promos) })));
   }
   if ((p = path.match(/^\/api\/products\/([\w-]+)$/))) {
     const r = await env.DB.prepare("SELECT * FROM products WHERE id=? AND active=1").bind(p[1]).first();
-    return r ? json(toPublic(r)) : bad("Not found", 404);
+    return r ? json({ ...toPublic(r), ...priced(r, await activePromos(env)) }) : bad("Not found", 404);
+  }
+  if (path === "/api/promos") {
+    const [promos, vouchers] = await Promise.all([activePromos(env),
+      env.DB.prepare("SELECT code, percent, min_spend FROM discounts WHERE active=1 AND show=1 ORDER BY percent DESC").all().then((r) => r.results)]);
+    return json({ promos: promos.map((x) => ({ id: x.id, label: x.label, percent: x.percent, scope: x.scope, target: x.scope === "products" ? x.targets : x.target, endsAt: x.ends_at.replace(" ", "T") + "Z" })), vouchers });
   }
   /* ---------- live chat (customer side) ---------- */
   if (path === "/api/chat/send" && m === "POST") {
@@ -193,11 +201,11 @@ async function handle(req, env, ctx) {
     return json({ ok: true });
   }
   if (path === "/api/discount" && m === "POST") {
-    const d = await env.DB.prepare("SELECT code, percent FROM discounts WHERE code=? AND active=1").bind(str((await body(req)).code, 40).toUpperCase()).first();
+    const d = await env.DB.prepare("SELECT code, percent, min_spend FROM discounts WHERE code=? AND active=1").bind(str((await body(req)).code, 40).toUpperCase()).first();
     return d ? json(d) : bad("That code isn't valid", 404);
   }
   if (path === "/api/quote" && m === "POST") {
-    try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, shipping: o.shipping, total: o.total }); }
+    try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, codeNote: o.codeNote, shipping: o.shipping, total: o.total }); }
     catch (e) { return bad(e.message); }
   }
 
@@ -235,7 +243,7 @@ async function handle(req, env, ctx) {
     await env.DB.prepare("UPDATE orders SET status='paid', paypal_capture_id=?, paid_at=datetime('now') WHERE id=? AND status='pending'").bind(cap.captureId, o.id).run();
     if (o.discount_code) await env.DB.prepare("UPDATE discounts SET uses=uses+1 WHERE code=?").bind(o.discount_code).run();
     const items = parse(o.items, []);
-    await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), reviews=reviews WHERE id=?").bind(l.qty, l.id)));
+    await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.qty, l.id)));
     ctx.waitUntil(fulfil(env, o.id).catch(() => {}));
     return json({ ok: true, orderId: o.id, status: "paid" });
   }
@@ -393,15 +401,39 @@ async function admin(req, env, ctx, path, m, url) {
     await env.DB.batch([env.DB.prepare("UPDATE products SET collection=NULL WHERE collection=?").bind(p[1]), env.DB.prepare("DELETE FROM collections WHERE id=?").bind(p[1])]);
     return json({ ok: true });
   }
+  if (path === "/api/admin/promos" && m === "GET") {
+    return json((await env.DB.prepare("SELECT *, CASE WHEN active=1 AND starts_at<=datetime('now') AND ends_at>datetime('now') THEN 'live' WHEN active=1 AND starts_at>datetime('now') THEN 'scheduled' ELSE 'ended' END state FROM promos ORDER BY created_at DESC LIMIT 100").all()).results);
+  }
+  if (path === "/api/admin/promos" && m === "POST") {
+    const b = await body(req), pct = Number(b.percent), label = str(b.label, 60) || `${pct}% off`;
+    if (!(pct >= 1 && pct <= 90)) return bad("Discount must be between 1% and 90%");
+    const scope = ["all", "collection", "products"].includes(b.scope) ? b.scope : "all";
+    const target = scope === "collection" ? str(b.target, 40) : scope === "products" ? JSON.stringify((b.target || []).map((x) => str(x, 100)).slice(0, 2000)) : null;
+    if (scope !== "all" && (!target || target === "[]")) return bad("Choose what the promotion applies to");
+    const iso = (v) => { const d = new Date(v); return isNaN(d) ? null : d.toISOString().slice(0, 19).replace("T", " "); };
+    const starts = b.startsAt ? iso(b.startsAt) : iso(Date.now()), ends = iso(b.endsAt);
+    if (!ends || ends <= starts) return bad("Choose an end time after the start time");
+    const r = await env.DB.prepare("INSERT INTO promos (label, percent, scope, target, starts_at, ends_at) VALUES (?,?,?,?,?,?)").bind(label, pct, scope, target, starts, ends).run();
+    const ids = scope === "products" ? JSON.parse(target) : (await env.DB.prepare(scope === "all" ? "SELECT id FROM products WHERE active=1" : "SELECT id FROM products WHERE active=1 AND collection=?").bind(...(scope === "all" ? [] : [target])).all()).results.map((x) => x.id);
+    ctx.waitUntil(pingIndexNow(env, siteUrl(env, req), ids.map((id) => "/products/" + id)).catch(() => {}));
+    return json({ ok: true, id: r.meta?.last_row_id });
+  }
+  if ((p = path.match(/^\/api\/admin\/promos\/(\d+)$/)) && (m === "DELETE" || m === "PATCH")) {
+    await env.DB.prepare(m === "DELETE" ? "DELETE FROM promos WHERE id=?" : "UPDATE promos SET active=0, ends_at=MIN(ends_at, datetime('now')) WHERE id=?").bind(Number(p[1])).run();
+    return json({ ok: true });
+  }
   if (path === "/api/admin/discounts" && m === "GET") return json((await env.DB.prepare("SELECT * FROM discounts ORDER BY code").all()).results);
   if (path === "/api/admin/discounts" && m === "POST") {
     const b = await body(req), code = str(b.code, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, ""), pct = Number(b.percent);
     if (!code || !(pct > 0 && pct <= 90)) return bad("Code and a percent between 1 and 90 are required");
-    await env.DB.prepare("INSERT INTO discounts (code,percent,active) VALUES (?,?,1) ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, active=1").bind(code, pct).run();
+    const minSpend = Math.max(0, Number(b.minSpend) || 0), show = b.show ? 1 : 0;
+    await env.DB.prepare("INSERT INTO discounts (code,percent,active,min_spend,show) VALUES (?,?,1,?,?) ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, min_spend=excluded.min_spend, show=excluded.show, active=1").bind(code, pct, minSpend, show).run();
     return json({ ok: true });
   }
   if ((p = path.match(/^\/api\/admin\/discounts\/([\w-]+)$/)) && m === "PATCH") {
-    await env.DB.prepare("UPDATE discounts SET active=? WHERE code=?").bind((await body(req)).active ? 1 : 0, p[1]).run();
+    const b = await body(req);
+    if ("active" in b) await env.DB.prepare("UPDATE discounts SET active=? WHERE code=?").bind(b.active ? 1 : 0, p[1]).run();
+    if ("show" in b) await env.DB.prepare("UPDATE discounts SET show=? WHERE code=?").bind(b.show ? 1 : 0, p[1]).run();
     return json({ ok: true });
   }
 

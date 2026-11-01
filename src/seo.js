@@ -1,6 +1,7 @@
 // Search-engine layer: real HTML content, meta tags and structured data for every page,
 // plus sitemap.xml, robots.txt and IndexNow (instant Bing/Yandex/Seznam notifications).
 import { ensureSchema, getSetting, setSetting, parse } from "./db.js";
+import { activePromos, priced } from "./promos.js";
 
 const BRAND = "LeeysPremium";
 const TAGLINE = "Everything you need, delivered fast";
@@ -42,6 +43,8 @@ async function pageFor(env, url, base) {
   if ((m = path.match(/^\/products\/([\w-]+)$/))) {
     const p = await env.DB.prepare("SELECT * FROM products WHERE id=? AND active=1").bind(m[1]).first();
     if (!p) return notFound(base);
+    const pr = priced(p, await activePromos(env));
+    p.price = pr.price; p.compare_at = pr.compareAt;
     const col = p.collection ? await env.DB.prepare("SELECT id,name FROM collections WHERE id=?").bind(p.collection).first() : null;
     const images = parse(p.images, []).filter((x) => /^https?:/.test(x));
     const url = base + "/products/" + p.id;
@@ -52,7 +55,7 @@ async function pageFor(env, url, base) {
       ld: [{
         "@context": "https://schema.org", "@type": "Product", name: p.title, sku: p.id, description: clip(p.description || p.title, 4900),
         image: images.length ? images : undefined, brand: { "@type": "Brand", name: BRAND }, category: col?.name,
-        offers: { "@type": "Offer", url, priceCurrency: "USD", price: Number(p.price).toFixed(2), itemCondition: "https://schema.org/NewCondition",
+        offers: { "@type": "Offer", url, priceCurrency: "USD", price: Number(p.price).toFixed(2), ...(pr.promo ? { priceValidUntil: pr.promo.endsAt.slice(0, 10) } : {}), itemCondition: "https://schema.org/NewCondition",
           availability: p.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock", seller: { "@type": "Organization", name: BRAND },
           hasMerchantReturnPolicy: { "@type": "MerchantReturnPolicy", applicableCountry: "US", returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow", merchantReturnDays: 30, returnMethod: "https://schema.org/ReturnByMail" } },
       }, breadcrumbs(base, [col && [col.name, "/collections/" + col.id], [p.title, "/products/" + p.id]])],
@@ -81,6 +84,13 @@ async function pageFor(env, url, base) {
       body: `<nav><a href="/">Home</a></nav><h1>${esc(c.name)}</h1><p>${esc(c.blurb || "")}</p>
         <ul>${prods.map((p) => `<li><a href="/products/${p.id}">${esc(p.title)}</a> — ${money(p.price)}</li>`).join("")}</ul>`,
     };
+  }
+  if (path === "/categories") {
+    const cols = (await env.DB.prepare("SELECT c.id, c.name, c.blurb, COUNT(p.id) n FROM collections c LEFT JOIN products p ON p.collection=c.id AND p.active=1 GROUP BY c.id ORDER BY c.sort").all()).results;
+    return { status: 200, title: `Shop by Category | ${BRAND}`, canonical: base + "/categories",
+      desc: clip(`Browse ${BRAND} by category: ${cols.map((c) => c.name).join(", ")}. Fast US shipping and 30-day returns.`, 158),
+      ld: [breadcrumbs(base, [["Categories", "/categories"]])],
+      body: `<h1>Categories</h1><ul>${cols.map((c) => `<li><a href="/collections/${c.id}">${esc(c.name)}</a> (${c.n}) — ${esc(c.blurb || "")}</li>`).join("")}</ul>` };
   }
   if ((m = path.match(/^\/pages\/([\w-]+)$/)) && PAGES[m[1]]) {
     const [t, d] = PAGES[m[1]];
@@ -143,7 +153,7 @@ export async function sitemap(req, env) {
   const u = (loc, lastmod, pri, extra = "") => `<url><loc>${esc(loc)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>${pri}</priority>${extra}</url>`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
-${[u(base + "/", latest, "1.0"), u(base + "/collections/all", latest, "0.9"),
+${[u(base + "/", latest, "1.0"), u(base + "/collections/all", latest, "0.9"), u(base + "/categories", latest, "0.8"),
   ...cols.results.map((c) => u(`${base}/collections/${c.id}`, latest, "0.8")),
   ...prods.results.map((p) => u(`${base}/products/${p.id}`, day(p.updated_at), "0.7",
     parse(p.images, []).filter((x) => /^https?:/.test(x)).slice(0, 3).map((src) => `<image:image><image:loc>${esc(src)}</image:loc></image:image>`).join(""))),

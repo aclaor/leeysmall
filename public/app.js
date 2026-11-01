@@ -101,15 +101,42 @@ function openDrawer() { renderDrawer(); $("#drawer").hidden = false; $("#overlay
 function closeAll() { $("#drawer").hidden = true; $("#overlay").hidden = true; $("#mobileNav").hidden = true; }
 
 /* ---------- UI pieces ---------- */
+/* ---------- Promos, delivery estimates, countdowns ---------- */
+let PROMO = { promos: [], vouchers: [] };
+const shopCountry = () => { try { return localStorage.getItem("lp_country") || CONFIG.country || "US"; } catch { return CONFIG.country || "US"; } };
+const setShopCountry = (c) => { try { localStorage.setItem("lp_country", c); } catch {} };
+function etaDays(p, country) {
+  if (country === "US") return p.ships === "us" ? [3, 7] : [8, 15];
+  if (["CA", "GB", "AU"].includes(country)) return [7, 14];
+  return [10, 20];
+}
+function etaShort(p, country = shopCountry()) {
+  const [a, b] = etaDays(p, country), d1 = new Date(), d2 = new Date();
+  d1.setDate(d1.getDate() + a); d2.setDate(d2.getDate() + b);
+  const m = (d) => d.toLocaleDateString("en-US", { month: "short" });
+  return m(d1) === m(d2) ? `${m(d1)} ${d1.getDate()}–${d2.getDate()}` : `${m(d1)} ${d1.getDate()} – ${m(d2)} ${d2.getDate()}`;
+}
+function timeLeft(iso) {
+  const s = Math.max(0, Math.floor((new Date(iso) - Date.now()) / 1000)), d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), mi = Math.floor((s % 3600) / 60), se = s % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return s <= 0 ? "ended" : d ? `${d}d ${h}h ${pad(mi)}m` : `${pad(h)}:${pad(mi)}:${pad(se)}`;
+}
+setInterval(() => document.querySelectorAll("[data-ends]").forEach((el) => (el.textContent = timeLeft(el.dataset.ends))), 1000);
+const bestVoucher = () => PROMO.vouchers[0] || null;
+const offPct = (p) => (p.compareAt && p.compareAt > p.price ? Math.round((1 - p.price / p.compareAt) * 100) : 0);
+
 const stars = (r, n) => `<div class="stars"><i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${r.toFixed(1)} (${n.toLocaleString()})</div>`;
 function card(p) {
-  const off = p.compareAt ? Math.round((1 - p.price / p.compareAt) * 100) : 0;
+  const off = offPct(p), v = bestVoucher(), freeShip = p.price >= FREE_SHIP;
   return `<div class="card"><div class="media-wrap"><a href="/products/${p.id}" data-link><div class="media">
-      ${p.stock === 0 ? `<span class="badge out">Sold out</span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : ""}
-      ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}</div></a>
+      ${p.stock === 0 ? `<span class="badge out">Sold out</span>` : p.promo ? `<span class="badge flash">⚡<span class="fl-txt"> ${esc(p.promo.label)}</span></span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : ""}
+      ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}
+      <div class="ribbons">${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">Voucher ${v.percent}% off</span>` : ""}</div></div></a>
     ${p.stock > 0 ? `<button class="btn quick-add" data-add="${p.id}">Quick add</button>` : ""}</div>
-    <a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>${stars(p.rating, p.reviews)}
-    <div class="price ${off ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s>` : ""}</div></div>`;
+    <a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>
+    <div class="price ${off ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s>` : ""}</div>
+    ${p.promo ? `<div class="promo-line">⚡ ${p.promo.percent}% off · ends in <span data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</span></div>` : ""}
+    <div class="card-meta"><span class="eta">🚚 ${etaShort(p)}</span>${p.sold ? `<span>${p.sold.toLocaleString()} sold</span>` : ""}</div></div>`;
 }
 const trustIcons = {
   truck: '<path d="M2 7h12v9H2zM14 10h4l3 3v3h-7z"/><circle cx="6" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>',
@@ -185,35 +212,58 @@ function marquee() {
 }
 
 function home() {
-  const best = [...PRODUCTS].sort((a, b) => b.reviews - a.reviews).slice(0, 8);
-  const pick = (id, i) => PRODUCTS.find((p) => p.id === id) || PRODUCTS[i % PRODUCTS.length];
-  const deal = pick("trio-wireless-station", 3);
   if (!PRODUCTS.length) { app.innerHTML = `<div class="wrap prose"><h1>New products coming soon</h1></div>`; return; }
+  const best = [...PRODUCTS].sort((a, b) => (b.sold || 0) - (a.sold || 0)).slice(0, 8);
+  const maxOff = Math.max(0, ...PRODUCTS.map(offPct));
+  const onSale = PRODUCTS.filter((p) => p.promo).sort((a, b) => b.promo.percent - a.promo.percent);
+  const flashEnds = onSale.length ? onSale.map((p) => p.promo.endsAt).sort()[0] : null;
+  const deal = [...PRODUCTS].filter((p) => p.stock > 0).sort((a, b) => offPct(b) - offPct(a))[0] || PRODUCTS[0];
+  const fresh = [...PRODUCTS].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 8);
   document.title = "LeeysPremium — Everything you need, delivered fast";
   app.innerHTML = `
   <section class="hero"><div class="wrap hero-inner">
-    <div><span class="eyebrow">New arrivals every week · Up to 45% off</span>
+    <div><span class="eyebrow">New arrivals every week${maxOff >= 10 ? ` · Up to ${maxOff}% off` : ""}</span>
       <h1>Everything you need, in one place.</h1>
       <p>Home, tech, fashion, beauty, outdoors and more — hand-picked, fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
-      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn ghost" href="/collections/all?sort=best" data-link>Best sellers</a></div></div>
+      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn ghost" href="/categories" data-link>Browse categories</a></div></div>
     ${showcaseHTML()}
   </div></section>
   ${marquee()}
+  ${voucherStrip()}
   ${trust()}
-  <section class="section"><div class="wrap"><div class="section-head"><h2>Shop by category</h2><a class="link-arrow" href="/collections/all" data-link>View all →</a></div>
-    <div class="coll-grid">${COLLECTIONS.map((c) => `<a class="coll-card" href="/collections/${c.id}" data-link>${collArt(c)}<div class="name">${esc(c.name)}</div></a>`).join("")}</div></div></section>
-  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Best sellers</h2><a class="link-arrow" href="/collections/all" data-link>Shop all →</a></div>
+  ${onSale.length ? `<section class="section"><div class="wrap"><div class="section-head flash-head"><h2>⚡ Flash sale</h2>
+      <div class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></div><a class="link-arrow" href="/collections/all?sort=deals" data-link>See all deals →</a></div>
+    <div class="rail">${onSale.slice(0, 12).map(card).join("")}</div></div></section>` : ""}
+  <section class="section"><div class="wrap"><div class="section-head"><h2>Shop by category</h2><a class="link-arrow" href="/categories" data-link>All categories →</a></div>
+    <div class="coll-grid">${COLLECTIONS.map((c) => `<a class="coll-card" href="/collections/${c.id}" data-link>${collArt(c)}<div class="name">${esc(c.name)}<small>${PRODUCTS.filter((p) => p.collection === c.id).length} products</small></div></a>`).join("")}</div></div></section>
+  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Top picks</h2><a class="link-arrow" href="/collections/all?sort=top" data-link>Shop all →</a></div>
     <div class="grid">${best.map(card).join("")}</div></div></section>
-  <section class="section" style="padding-top:0"><div class="wrap"><div class="banner">
-    <div class="copy"><span class="eyebrow">Deal of the week</span><h2>${esc(deal.title)}</h2><p>Now ${money(deal.price)}${deal.compareAt ? ` — was ${money(deal.compareAt)}` : ""}. Limited stock at this price.</p><a class="btn accent" href="/products/${deal.id}" data-link>Grab the deal</a></div>
-    ${art(deal, 2)}</div></div></section>
-  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Loved by customers</h2></div>
+  ${offPct(deal) ? `<section class="section" style="padding-top:0"><div class="wrap"><div class="banner">
+    <div class="copy"><span class="eyebrow">${deal.promo ? "⚡ " + esc(deal.promo.label) : "Biggest discount right now"}</span><h2>${esc(deal.title)}</h2><p>Now ${money(deal.price)} — was ${money(deal.compareAt)} (save ${offPct(deal)}%).${deal.promo ? ` Sale ends in <b data-ends="${deal.promo.endsAt}">${timeLeft(deal.promo.endsAt)}</b>.` : ""}</p><a class="btn accent" href="/products/${deal.id}" data-link>Shop the deal</a></div>
+    ${art(deal, 0)}</div></div></section>` : ""}
+  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>New arrivals</h2><a class="link-arrow" href="/collections/all?sort=latest" data-link>See all →</a></div>
+    <div class="rail">${fresh.map(card).join("")}</div></div></section>
+  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Why shop with LeeysPremium</h2></div>
     <div class="reviews">${[
-      ["Fast shipping to Texas and the earbuds sound way better than the price suggests.", "Marcus T.", "AeroBuds Pro"],
-      ["The 3-in-1 charger cleaned up my whole nightstand. Arrived in 4 days.", "Jenna R.", "Trio Charging Station"],
-      ["Power bank charged my phone four times on a camping trip. Solid build.", "Daniel K.", "Volt 20,000mAh"],
-    ].map(([t, w, p]) => `<div class="review">${stars(5, 1).replace(/\s*5\.0 \(1\)/, "")}<p>“${t}”</p><div class="who">${w} <span>✓ Verified buyer</span></div><small class="muted">${p}</small></div>`).join("")}</div></div></section>`;
+      ["🚚", "Delivery date on every product", "See the estimated arrival before you buy. Many items ship from US warehouses in 3–7 days."],
+      ["🔒", "Safe, secure checkout", "Pay with PayPal or any major card. We never see or store your card number."],
+      ["↩️", "30-day returns", "Changed your mind? Send it back within 30 days of delivery for a refund."],
+    ].map(([i, t, d]) => `<div class="review"><div style="font-size:26px">${i}</div><p style="font-style:normal"><b style="color:#fff">${t}</b><br>${d}</p></div>`).join("")}</div></div></section>`;
   startShowcase();
+  bindVouchers();
+}
+function voucherStrip() {
+  if (!PROMO.vouchers.length) return "";
+  return `<section class="vouchers"><div class="wrap"><div class="v-rail">${PROMO.vouchers.map((v) => `<div class="vcard"><div class="v-left"><b>${v.percent}%</b><span>OFF</span></div>
+    <div class="v-mid"><b>${v.min_spend ? `Min. spend ${money(v.min_spend)}` : "No minimum spend"}</b><span>Code <code>${esc(v.code)}</code></span></div>
+    <button class="btn sm accent" data-claim="${esc(v.code)}">Claim</button></div>`).join("")}</div></div></section>`;
+}
+function bindVouchers() {
+  document.querySelectorAll("[data-claim]").forEach((b) => (b.onclick = () => {
+    try { localStorage.setItem("lp_voucher", b.dataset.claim); } catch {}
+    navigator.clipboard?.writeText(b.dataset.claim).catch(() => {});
+    b.textContent = "Claimed ✓"; b.disabled = true; toast(`Voucher ${b.dataset.claim} saved — it's applied automatically at checkout`);
+  }));
 }
 
 function collection(id, params) {
@@ -223,28 +273,52 @@ function collection(id, params) {
   if (q) list = PRODUCTS.filter((p) => (p.title + " " + p.description).toLowerCase().includes(q));
   const title = q ? `Search: “${params.get("q")}”` : c ? c.name : "All products";
   document.title = title + " — LeeysPremium";
-  const state = { sort: params.get("sort") || "featured", stock: params.get("stock") === "1", max: Number(params.get("max")) || 0, us: params.get("us") === "1" };
+  const sortParam = params.get("sort");
+  const state = { sort: ["popular", "latest", "top", "price-asc", "price-desc", "deals"].includes(sortParam) ? sortParam : sortParam === "best" ? "top" : "popular",
+    stock: params.get("stock") === "1", max: Number(params.get("max")) || 0, us: params.get("us") === "1" };
+  const catPromo = c ? PROMO.promos.find((x) => (x.scope === "collection" && x.target === c.id) || x.scope === "all") : PROMO.promos.find((x) => x.scope === "all");
+  const cover = c ? coverProduct(c) : null;
   const apply = () => {
-    let l = list.filter((p) => (!state.stock || p.stock > 0) && (!state.max || p.price <= state.max) && (!state.us || p.ships === "us"));
-    const s = { "price-asc": (a, b) => a.price - b.price, "price-desc": (a, b) => b.price - a.price, rating: (a, b) => b.rating - a.rating, best: (a, b) => b.reviews - a.reviews }[state.sort];
+    let l = list.filter((p) => (!state.stock || p.stock > 0) && (!state.max || p.price <= state.max) && (!state.us || p.ships === "us") && (state.sort !== "deals" || offPct(p) > 0));
+    const s = { latest: (a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")), top: (a, b) => (b.sold || 0) - (a.sold || 0),
+      "price-asc": (a, b) => a.price - b.price, "price-desc": (a, b) => b.price - a.price, deals: (a, b) => offPct(b) - offPct(a) }[state.sort];
     if (s) l.sort(s);
     $("#results").innerHTML = l.length ? l.map(card).join("") : `<div class="empty" style="grid-column:1/-1">No products match these filters.</div>`;
     $("#count").textContent = l.length + " product" + (l.length === 1 ? "" : "s");
+    document.querySelectorAll("[data-sort]").forEach((t) => t.classList.toggle("on", t.dataset.sort === state.sort || (t.dataset.sort === "price" && state.sort.startsWith("price"))));
+    const pt = $("[data-sort=price] i"); if (pt) pt.textContent = state.sort === "price-asc" ? "↑" : state.sort === "price-desc" ? "↓" : "↕";
   };
-  app.innerHTML = `<div class="wrap"><div class="page-head"><div class="crumbs"><a href="/" data-link>Home</a> / ${esc(title)}</div><h1>${esc(title)}</h1>${c ? `<p class="muted">${esc(c.blurb)}</p>` : ""}</div>
+  app.innerHTML = `<div class="wrap">
+    ${!q ? `<div class="cat-banner">${cover ? `<div class="cat-thumb">${art(cover)}</div>` : ""}<div class="cat-info"><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/categories" data-link>Categories</a> / ${esc(title)}</div>
+      <h1>${esc(title)}</h1><p class="muted">${c ? esc(c.blurb || "") + " · " : ""}${list.length} products · 🚚 delivery from ${etaShort({ ships: "us" })}</p>
+      ${catPromo ? `<div class="promo-line big">⚡ ${esc(catPromo.label)} — ${catPromo.percent}% off · ends in <b data-ends="${catPromo.endsAt}">${timeLeft(catPromo.endsAt)}</b></div>` : ""}</div></div>`
+    : `<div class="page-head"><div class="crumbs"><a href="/" data-link>Home</a> / Search</div><h1>${esc(title)}</h1></div>`}
     ${q ? "" : `<div class="chips"><a class="chip ${id === "all" ? "on" : ""}" href="/collections/all" data-link>All</a>${COLLECTIONS.map((x) => `<a class="chip ${x.id === id ? "on" : ""}" href="/collections/${x.id}" data-link>${esc(x.name)}</a>`).join("")}</div>`}
+    ${voucherStrip()}
+    <div class="sort-tabs">${[["popular", "Popular"], ["latest", "Latest"], ["top", "Top sales"], ["deals", "Deals"]].map(([v, t]) => `<button data-sort="${v}">${t}</button>`).join("")}<button data-sort="price">Price <i>↕</i></button></div>
     <div class="toolbar"><div class="filters">
       <label><input type="checkbox" id="fStock" ${state.stock ? "checked" : ""}> In stock</label>
       <label><input type="checkbox" id="fUs" ${state.us ? "checked" : ""}> Ships from US</label>
-      <select class="select" id="fMax"><option value="0">Any price</option>${[20, 30, 40, 50].map((v) => `<option value="${v}" ${state.max === v ? "selected" : ""}>Under $${v}</option>`).join("")}</select>
+      <select class="select" id="fMax"><option value="0">Any price</option>${[10, 20, 30, 50, 100].map((v) => `<option value="${v}" ${state.max === v ? "selected" : ""}>Under $${v}</option>`).join("")}</select></div>
       <span class="muted" id="count"></span></div>
-      <select class="select" id="fSort">${[["featured", "Featured"], ["best", "Best selling"], ["price-asc", "Price: low to high"], ["price-desc", "Price: high to low"], ["rating", "Top rated"]].map(([v, t]) => `<option value="${v}" ${state.sort === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>
     <div class="grid" id="results"></div><div style="height:56px"></div></div>`;
+  document.querySelectorAll("[data-sort]").forEach((t) => (t.onclick = () => {
+    state.sort = t.dataset.sort === "price" ? (state.sort === "price-asc" ? "price-desc" : "price-asc") : t.dataset.sort; apply();
+  }));
   $("#fStock").onchange = (e) => { state.stock = e.target.checked; apply(); };
   $("#fUs").onchange = (e) => { state.us = e.target.checked; apply(); };
   $("#fMax").onchange = (e) => { state.max = Number(e.target.value); apply(); };
-  $("#fSort").onchange = (e) => { state.sort = e.target.value; apply(); };
+  bindVouchers();
   apply();
+}
+
+function categoriesPage() {
+  document.title = "Categories — LeeysPremium";
+  const count = (id) => PRODUCTS.filter((p) => p.collection === id).length;
+  app.innerHTML = `<div class="wrap prose" style="max-width:820px"><div class="crumbs"><a href="/" data-link>Home</a> / Categories</div><h1>Categories</h1>
+    <div class="cat-list">${COLLECTIONS.filter((c) => count(c.id)).map((c) => `<a class="cat-row" href="/collections/${c.id}" data-link><div class="cat-ico">${collArt(c)}</div>
+      <div><b>${esc(c.name)}</b> <span class="muted">(${count(c.id)})</span><small>${esc(c.blurb || "")}</small></div><span class="chev">›</span></a>`).join("")}
+      <a class="cat-row" href="/collections/all" data-link><div class="cat-ico all">LP</div><div><b>All products</b> <span class="muted">(${PRODUCTS.length})</span><small>Everything in the store</small></div><span class="chev">›</span></a></div></div>`;
 }
 
 function deliveryText(p, country) {
@@ -260,22 +334,26 @@ function product(id) {
   document.title = p.title + " — LeeysPremium";
   const sel = Object.fromEntries(p.variants.map((v) => [v.name, v.options[0]]));
   let img = 0, qty = 1, country = "US";
-  const off = p.compareAt ? Math.round((1 - p.price / p.compareAt) * 100) : 0;
+  const off = offPct(p);
+  country = shopCountry();
   const related = PRODUCTS.filter((x) => x.collection === p.collection && x.id !== p.id).concat(PRODUCTS.filter((x) => x.collection !== p.collection)).slice(0, 4);
   const coll = COLLECTIONS.find((c) => c.id === p.collection) || { id: "all", name: "All products" };
   const stockTxt = p.stock === 0 ? `<div class="stock none">Sold out</div>` : p.stock < 60 ? `<div class="stock low">Only ${p.stock} left — order soon</div>` : `<div class="stock">In stock, ready to ship</div>`;
   app.innerHTML = `<div class="wrap"><div class="pdp">
     <div class="gallery"><div class="main" id="mainImg">${art(p, 0)}</div><div class="thumbs">${[...Array(Math.min(4, p.images?.length || 4)).keys()].map((i) => `<button data-img="${i}" class="${i === 0 ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
     <div><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/collections/${coll.id}" data-link>${esc(coll.name)}</a></div>
-      <h1>${esc(p.title)}</h1>${stars(p.rating, p.reviews)}
-      <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
+      <h1>${esc(p.title)}</h1>${p.sold ? `<div class="muted" style="font-size:14px">${p.sold.toLocaleString()} sold</div>` : ""}
+      ${p.promo ? `<div class="flash-bar"><span>⚡ ${esc(p.promo.label)}</span><span>Ends in <b data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</b></span></div>` : ""}
+      <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
+      ${PROMO.vouchers.length ? `<div class="pdp-vouchers">${PROMO.vouchers.map((v) => `<button class="vchip" data-claim="${esc(v.code)}">🎟 ${v.percent}% off${v.min_spend ? ` · min ${money(v.min_spend)}` : ""}</button>`).join("")}</div>` : ""}
+      ${p.price >= FREE_SHIP ? `<div class="perk">✓ Free US shipping on this item</div>` : `<div class="perk">Free US shipping on orders over ${money(FREE_SHIP)}</div>`}
       ${stockTxt}
       ${p.variants.map((v) => `<div class="opt"><div class="opt-label">${esc(v.name)}: <span data-sel="${esc(v.name)}">${esc(sel[v.name])}</span></div><div class="opt-values">${v.options.map((o) => `<button data-opt="${esc(v.name)}" data-val="${esc(o)}" class="${o === sel[v.name] ? "on" : ""}">${esc(o)}</button>`).join("")}</div></div>`).join("")}
       <div class="opt"><div class="opt-label">Quantity</div><div class="qty"><button id="qMinus">−</button><input id="qVal" value="1" readonly><button id="qPlus">+</button></div></div>
       <div class="buy-row"><button class="btn ghost" id="addBtn" ${p.stock === 0 ? "disabled" : ""}>Add to cart</button><button class="btn accent" id="buyBtn" ${p.stock === 0 ? "disabled" : ""}>Buy it now</button></div>
       <div class="ship-box">
-        <div>🚚 <span>Ship to</span><select class="select" id="country">${[["US", "United States"], ["CA", "Canada"], ["GB", "United Kingdom"], ["AU", "Australia"], ["PH", "Philippines"], ["OT", "Other countries"]].map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></div>
-        <div>📦 <b id="eta">${deliveryText(p, "US")}</b></div>
+        <div>🚚 <span>Ship to</span><select class="select" id="country">${[["US", "United States"], ["CA", "Canada"], ["GB", "United Kingdom"], ["AU", "Australia"], ["PH", "Philippines"], ["OT", "Other countries"]].map(([v, t]) => `<option value="${v}" ${v === (["US", "CA", "GB", "AU", "PH"].includes(country) ? country : "OT") ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+        <div>📦 <b id="eta">${deliveryText(p, country)}</b></div>
         <div>↩️ <span>30-day returns · Secure checkout with PayPal & cards</span></div></div>
       <details class="acc" open><summary>Description</summary><p>${esc(p.description)}</p></details>
       <details class="acc"><summary>Shipping</summary><p>US orders ship from our US warehouses where available (3–7 business days). International orders ship worldwide in 7–20 business days with tracking. Free US shipping over $${FREE_SHIP}.</p></details>
@@ -294,7 +372,8 @@ function product(id) {
   }));
   $("#qMinus").onclick = () => { qty = Math.max(1, qty - 1); $("#qVal").value = qty; };
   $("#qPlus").onclick = () => { qty = Math.min(10, qty + 1); $("#qVal").value = qty; };
-  $("#country").onchange = (e) => { country = e.target.value; $("#eta").textContent = deliveryText(p, country); };
+  $("#country").onchange = (e) => { country = e.target.value; setShopCountry(country); $("#eta").textContent = deliveryText(p, country); };
+  bindVouchers();
   $("#addBtn").onclick = () => { cart.add(p.id, variantStr(), qty); openDrawer(); };
   $("#buyBtn").onclick = () => { cart.add(p.id, variantStr(), qty); go("/checkout"); };
 }
@@ -330,7 +409,7 @@ function checkout() {
   document.title = "Checkout — LeeysPremium";
   const lines = cart.lines();
   if (!lines.length) return go("/cart", true);
-  let code = "";
+  let code = ""; try { code = localStorage.getItem("lp_voucher") || ""; } catch {}
   app.innerHTML = `<div class="wrap"><div class="checkout">
     <form class="co-form" id="coForm" novalidate><div class="crumbs"><a href="/cart" data-link>Cart</a> / Information / Payment</div>
       <h2>Contact</h2><div class="field"><input name="email" type="email" required placeholder="Email" autocomplete="email"></div>
@@ -345,7 +424,7 @@ function checkout() {
       <div id="coError" class="note err" hidden></div>
       <div id="paypal-buttons" style="margin-top:14px;min-height:50px"></div></form>
     <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
-      <div class="discount"><input id="code" placeholder="Discount code"><button type="button" class="btn" id="applyCode">Apply</button></div>
+      <div class="discount"><input id="code" placeholder="Voucher or discount code" value="${esc(code)}"><button type="button" class="btn" id="applyCode">Apply</button></div>
       <div class="totals" id="totals"></div></div></div></div>`;
   const form = $("#coForm"), err = (m) => { const e = $("#coError"); e.textContent = m || ""; e.hidden = !m; };
   const items = () => cart.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
@@ -353,7 +432,8 @@ function checkout() {
     try {
       const q = await api("/api/quote", { items: items(), code, country: form.country.value });
       $("#totals").innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(q.subtotal)}</span></div>
-        ${q.discount ? `<div class="row-between"><span>Discount (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
+        ${q.discount ? `<div class="row-between"><span>Voucher (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
+        ${q.codeNote ? `<div class="muted" style="font-size:13px">🎟 ${esc(q.codeNote)}</div>` : ""}
         <div class="row-between"><span>Shipping</span><span>${q.shipping ? money(q.shipping) : "Free"}</span></div>
         <div class="row-between grand"><span>Total</span><span>USD ${money(q.total)}</span></div>`;
       err("");
@@ -362,7 +442,7 @@ function checkout() {
   quote();
   form.country.onchange = quote;
   $("#applyCode").onclick = async () => {
-    try { const d = await api("/api/discount", { code: $("#code").value }); code = d.code; toast(`${d.percent}% discount applied`); quote(); }
+    try { const d = await api("/api/discount", { code: $("#code").value }); code = d.code; try { localStorage.setItem("lp_voucher", d.code); } catch {} toast(`${d.percent}% voucher applied`); quote(); }
     catch (e) { toast(e.message); }
   };
   const valid = () => {
@@ -441,6 +521,7 @@ function route() {
   else if (pathname === "/search") collection("all", params);
   else if ((m = pathname.match(/^\/collections\/([\w-]+)$/))) collection(m[1], params);
   else if ((m = pathname.match(/^\/products\/([\w-]+)$/))) product(m[1]);
+  else if (pathname === "/categories") categoriesPage();
   else if (pathname === "/cart") cartPage();
   else if (pathname === "/checkout") checkout();
   else if (pathname === "/thank-you") thankYou(params);
@@ -476,11 +557,11 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
 (async function init() {
   $("#year").textContent = new Date().getFullYear();
   try {
-    [PRODUCTS, COLLECTIONS, CONFIG] = await Promise.all(["/api/products", "/api/collections", "/api/config"].map((u) => fetch(u).then((r) => { if (!r.ok) throw 0; return r.json(); })));
+    [PRODUCTS, COLLECTIONS, CONFIG, PROMO] = await Promise.all(["/api/products", "/api/collections", "/api/config", "/api/promos"].map((u) => fetch(u).then((r) => { if (!r.ok) throw 0; return r.json(); })));
   } catch { app.innerHTML = `<div class="wrap prose"><h1>Store is loading slowly</h1><p>Please refresh the page.</p></div>`; return; }
-  const link = (c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`, allLink = `<a href="/collections/all" data-link>Shop all</a>`;
+  const link = (c) => `<a href="/collections/${c.id}" data-link>${esc(c.name)}</a>`, allLink = `<a href="/collections/all" data-link>Shop all</a><a href="/categories" data-link>Categories</a>`;
   const links = allLink + COLLECTIONS.map(link).join("");
-  $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 5).map(link).join("");
+  $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 4).map(link).join("");
   $("#mobileNav").innerHTML = links + `<a href="/track" data-link>Track order</a>`;
   $("#footerCollections").innerHTML = links;
   updateCount(); route();
