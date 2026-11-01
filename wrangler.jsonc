@@ -9,6 +9,8 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/", "/products/*", "/collections/*", "/categories", "/pages/*", "/search", "/cart", "/checkout", "/thank-you", "/track", "/account", "/sitemap.xml", "/robots.txt", "/indexnow-*", "/media/*", "/live", "/videos"]
   },
+  // Video storage (Premium Video / Live replays)
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "leeyspremium-media" }],
   "d1_databases": [
     { "binding": "DB", "database_name": "leeysmall-db", "database_id": "f8a6b057-c8e0-47c5-99c7-f89386fb9bfd" }
   ],
