@@ -26,6 +26,8 @@ const SCHEMA = [
     unread_admin INTEGER DEFAULT 0, unread_customer INTEGER DEFAULT 0, last_body TEXT, last_from TEXT, last_at TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chat_msgs ON chat_messages(chat_id, id)`,
+  `CREATE TABLE IF NOT EXISTS gifts (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT, trigger_scope TEXT NOT NULL, trigger_target TEXT NOT NULL, gift_id TEXT NOT NULL,
+    gift_variant TEXT, per_item INTEGER DEFAULT 0, active INTEGER DEFAULT 1, ends_at TEXT, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS media (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, title TEXT, kind TEXT DEFAULT 'product', product_id TEXT, size INTEGER, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS live_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, body TEXT NOT NULL, is_host INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0, ip TEXT, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS promos (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, percent REAL NOT NULL, scope TEXT NOT NULL DEFAULT 'all', target TEXT,

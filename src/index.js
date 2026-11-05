@@ -1,4 +1,5 @@
 import { classify } from "../public/classify.js";
+import { activeGifts, giftLines, publicGifts } from "./gifts.js";
 import { activePromos, priced, schedules, windowEnd, scheduleText } from "./promos.js";
 import { mediaReady, startUpload, uploadPart, completeUpload, deleteObject, serveMedia, embedUrl } from "./media.js";
 import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
@@ -63,9 +64,10 @@ async function buildOrder(env, b) {
     }
     const vm = parse(p.variant_map, {});
     const vmEntry = vm[variant] || (Object.keys(vm).length === 1 ? Object.values(vm)[0] : null);
-    lines.push({ id: p.id, title: p.title, variant, qty, price: priced(p, promos).price, cost: vmEntry?.cost ?? p.cost, supplier: p.supplier, vid: vmEntry?.vid || null, ships: p.ships });
+    lines.push({ id: p.id, collection: p.collection, title: p.title, variant, qty, price: priced(p, promos).price, cost: vmEntry?.cost ?? p.cost, supplier: p.supplier, vid: vmEntry?.vid || null, ships: p.ships });
   }
   const subtotal = r2(lines.reduce((s, l) => s + l.price * l.qty, 0));
+  lines.push(...giftLines(lines, await activeGifts(env)));
   let discount = 0, code = null, codeNote = null;
   if (b.code) {
     const d = await env.DB.prepare("SELECT * FROM discounts WHERE code=? AND active=1").bind(str(b.code, 40).toUpperCase()).first();
@@ -158,10 +160,10 @@ async function handle(req, env, ctx) {
     return r ? json({ ...toPublic(r), ...priced(r, await activePromos(env)) }) : bad("Not found", 404);
   }
   if (path === "/api/promos") {
-    const [promos, sched, vouchers] = await Promise.all([activePromos(env), schedules(env),
-      env.DB.prepare("SELECT code, percent, min_spend FROM discounts WHERE active=1 AND show=1 ORDER BY percent DESC").all().then((r) => r.results)]);
+    const [promos, sched, vouchers, gifts] = await Promise.all([activePromos(env), schedules(env),
+      env.DB.prepare("SELECT code, percent, min_spend FROM discounts WHERE active=1 AND show=1 ORDER BY percent DESC").all().then((r) => r.results), activeGifts(env)]);
     return json({ promos: promos.map((x) => ({ id: x.id, label: x.label, percent: x.percent, scope: x.scope, target: x.scope === "products" ? x.targets : x.target, endsAt: x.endsAt, recurring: !!x.recur })),
-      schedules: sched, vouchers });
+      schedules: sched, vouchers, gifts: publicGifts(gifts) });
   }
   /* ---------- live chat (customer side) ---------- */
   if (path === "/api/chat/send" && m === "POST") {
@@ -231,7 +233,8 @@ async function handle(req, env, ctx) {
     return d ? json(d) : bad("That code isn't valid", 404);
   }
   if (path === "/api/quote" && m === "POST") {
-    try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, codeNote: o.codeNote, shipping: o.shipping, total: o.total }); }
+    try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, codeNote: o.codeNote, shipping: o.shipping, total: o.total,
+      gifts: o.lines.filter((l) => l.gift).map((l) => ({ id: l.id, title: l.title, variant: l.variant, qty: l.qty, value: l.giftValue, label: l.giftLabel })) }); }
     catch (e) { return bad(e.message); }
   }
 
@@ -269,7 +272,7 @@ async function handle(req, env, ctx) {
     await env.DB.prepare("UPDATE orders SET status='paid', paypal_capture_id=?, paid_at=datetime('now') WHERE id=? AND status='pending'").bind(cap.captureId, o.id).run();
     if (o.discount_code) await env.DB.prepare("UPDATE discounts SET uses=uses+1 WHERE code=?").bind(o.discount_code).run();
     const items = parse(o.items, []);
-    await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.qty, l.id)));
+    await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.gift ? 0 : l.qty, l.id)));
     ctx.waitUntil(fulfil(env, o.id).catch(() => {}));
     return json({ ok: true, orderId: o.id, status: "paid" });
   }
@@ -345,6 +348,29 @@ async function admin(req, env, ctx, path, m, url) {
   }
   if (path === "/api/admin/seo/submit" && m === "POST") {
     try { return json(await pingIndexNow(env, siteUrl(env, req), await allSitePaths(env))); } catch (e) { return bad(e.message, 502); }
+  }
+  if (path === "/api/admin/gifts" && m === "GET") {
+    return json((await env.DB.prepare("SELECT g.*, p.title AS gift_title, p.stock AS gift_stock FROM gifts g LEFT JOIN products p ON p.id=g.gift_id ORDER BY g.created_at DESC").all()).results);
+  }
+  if (path === "/api/admin/gifts" && m === "POST") {
+    const b = await body(req);
+    const scope = b.scope === "collection" ? "collection" : "products";
+    const target = scope === "collection" ? str(b.target, 40) : JSON.stringify((b.target || []).map((x) => str(x, 100)).slice(0, 2000));
+    if (!target || target === "[]") return bad("Choose which products earn the gift");
+    const g = await env.DB.prepare("SELECT id, title, variants FROM products WHERE id=?").bind(str(b.giftId, 100)).first();
+    if (!g) return bad("Choose the gift product");
+    const variants = parse(g.variants, []), variant = str(b.giftVariant, 150);
+    if (variants.length && variant.split(" / ").length !== variants.length) return bad("Choose the gift's option (e.g. color)");
+    const ends = b.endsAt ? new Date(b.endsAt).toISOString().slice(0, 19).replace("T", " ") : null;
+    const label = str(b.label, 80) || "Free " + g.title.slice(0, 60);
+    await env.DB.prepare("INSERT INTO gifts (label, trigger_scope, trigger_target, gift_id, gift_variant, per_item, ends_at) VALUES (?,?,?,?,?,?,?)")
+      .bind(label, scope, target, g.id, variant || null, b.perItem ? 1 : 0, ends).run();
+    return json({ ok: true });
+  }
+  if ((p = path.match(/^\/api\/admin\/gifts\/(\d+)$/)) && (m === "DELETE" || m === "PATCH")) {
+    if (m === "DELETE") await env.DB.prepare("DELETE FROM gifts WHERE id=?").bind(Number(p[1])).run();
+    else await env.DB.prepare("UPDATE gifts SET active=? WHERE id=?").bind((await body(req)).active ? 1 : 0, Number(p[1])).run();
+    return json({ ok: true });
   }
   if (path === "/api/admin/cat-rules" && m === "GET") return json(parse(await getSetting(env, "cat_rules"), []));
   if (path === "/api/admin/cat-rules" && m === "PUT") {

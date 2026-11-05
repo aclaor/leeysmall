@@ -92,7 +92,7 @@ function orderModal(o) {
     ${o.notes ? `<pre class="notes">${esc(o.notes)}</pre>` : ""}
     <div class="form-grid" style="margin-top:16px"><div><b>Customer</b><p style="margin:6px 0">${esc(o.name)}<br>${esc(o.email)}<br>${esc(o.phone || "")}</p></div>
       <div><b>Ship to</b><p style="margin:6px 0">${esc(a.address1)} ${esc(a.address2 || "")}<br>${esc(a.city)}, ${esc(a.province || "")} ${esc(a.zip)}<br>${esc(a.countryName || o.country)}</p></div></div>
-    <table style="margin:10px 0"><tr><th>Item</th><th>Supplier</th><th>Qty</th><th>Price</th><th>Cost</th></tr>${o.items.map((l) => `<tr><td>${esc(l.title)}<div class="muted" style="font-size:12px">${esc(l.variant || "")}</div></td><td>${SUPPLIER[l.supplier] || esc(l.supplier)}</td><td>${l.qty}</td><td>${money(l.price)}</td><td>${money(l.cost)}</td></tr>`).join("")}</table>
+    <table style="margin:10px 0"><tr><th>Item</th><th>Supplier</th><th>Qty</th><th>Price</th><th>Cost</th></tr>${o.items.map((l) => `<tr><td>${l.gift ? "🎁 <b style='color:#ffd38a'>FREE GIFT</b> · " : ""}${esc(l.title)}<div class="muted" style="font-size:12px">${esc(l.variant || "")}</div></td><td>${SUPPLIER[l.supplier] || esc(l.supplier)}</td><td>${l.qty}</td><td>${money(l.price)}</td><td>${money(l.cost)}</td></tr>`).join("")}</table>
     <div class="row-between"><span>Subtotal ${money(o.subtotal)} · Discount −${money(o.discount)} · Shipping ${money(o.shipping)}</span><b>Total ${money(o.total)}</b></div>
     <div class="row-between" style="margin-top:4px"><span class="muted">Supplier cost ${money(o.cost_total)}</span><b style="color:var(--good)">Profit ${money(o.total - o.cost_total)}</b></div>
     <div class="muted" style="font-size:13px;margin-top:6px">Supplier orders: ${Object.entries(o.supplier_order_ids || {}).map(([k, v]) => esc(k + ": " + v)).join(", ") || "none yet"}</div>
@@ -623,6 +623,7 @@ async function promos() {
       toast("Promotion saved"); promos();
     } catch (er) { toast(er.message); }
   };
+  giftsPanel(prods);
   main().querySelectorAll("[data-pend]").forEach((b) => (b.onclick = async () => { if (!confirm("End this promotion now? Weekly promotions stop repeating.")) return; await api("/api/admin/promos/" + b.dataset.pend, "PATCH"); toast("Promotion ended"); promos(); }));
   main().querySelectorAll("[data-pdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this promotion?")) return; await api("/api/admin/promos/" + b.dataset.pdel, "DELETE"); promos(); }));
 }
@@ -720,6 +721,67 @@ async function liveAdmin() {
     } catch (er) { toast(er.message); btn.disabled = false; $("#vprog").textContent = ""; }
   };
   main().querySelectorAll("[data-vdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this video permanently?")) return; await api("/api/admin/media/" + b.dataset.vdel, "DELETE"); toast("Video deleted"); liveAdmin(); }));
+}
+
+/* ---------- Free gifts (buy X → get Y free) ---------- */
+async function giftsPanel(prods) {
+  const gifts = await api("/api/admin/gifts").catch(() => []);
+  const trig = new Set();
+  let giftId = null;
+  const name = (id) => prods.find((x) => x.id === id)?.title || id;
+  const trigText = (g) => g.trigger_scope === "collection" ? "Any product in " + (collections.find((c) => c.id === g.trigger_target)?.name || g.trigger_target)
+    : (() => { const ids = JSON.parse(g.trigger_target || "[]"); return ids.length <= 2 ? ids.map((id) => name(id).slice(0, 40)).join(", ") : ids.length + " selected products"; })();
+  main().insertAdjacentHTML("beforeend", `<h2 style="margin:28px 0 10px">🎁 Free gifts</h2>
+    <p class="muted" style="margin-top:0">Buy one thing, get another free. The gift is added to the order at $0 automatically at checkout, shown in the cart, and sent to the supplier with the order. The gift can be a hidden (draft) product — it doesn't need to be for sale.</p>
+    <form class="panel" id="gf"><div class="form-grid">
+      <label class="full">When the customer buys<select class="inp" name="scope"><option value="products">Specific products…</option>${collections.map((c) => `<option value="c:${c.id}">Any product in ${esc(c.name)}</option>`).join("")}</select></label>
+      <div class="full" id="gtrig"><div class="row-between"><b style="font-size:13px;color:var(--ink-2)">Products that earn the gift <span id="gtc" style="color:var(--blue-2)">(0)</span></b></div>
+        <input class="inp" id="gtq" placeholder="Search, e.g. watch" style="margin:6px 0"><div id="gtl" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:6px"></div></div>
+      <div class="full"><b style="font-size:13px;color:var(--ink-2)">They get free <span id="gsel" style="color:#ffd38a"></span></b>
+        <input class="inp" id="ggq" placeholder="Search the gift, e.g. bag" style="margin:6px 0"><div id="ggl" style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:6px"></div></div>
+      <label id="gvarw" hidden>Gift option<select class="inp" name="variant"></select></label>
+      <label>How many gifts<select class="inp" name="perItem"><option value="">1 per order</option><option value="1">1 per qualifying item bought</option></select></label>
+      <label>Ends (optional)<input class="inp" type="date" name="ends"></label>
+      <label class="full">Name shown to shoppers (optional)<input class="inp" name="label" placeholder="e.g. Free tote bag with every watch" maxlength="80"></label>
+      <div class="full"><button class="btn accent">Create free gift</button></div></div></form>
+    <div class="panel tbl-wrap" style="padding:6px 10px">${gifts.length ? `<table><tr><th>Offer</th><th>When they buy</th><th>Gift</th><th>Qty</th><th>Status</th><th></th></tr>
+      ${gifts.map((g) => `<tr><td><b>${esc(g.label || "")}</b>${g.ends_at ? `<div class="muted" style="font-size:12px">until ${date(g.ends_at)}</div>` : ""}</td><td>${esc(trigText(g))}</td>
+        <td>🎁 ${esc((g.gift_title || g.gift_id).slice(0, 50))}${g.gift_variant ? ` <span class="muted">(${esc(g.gift_variant)})</span>` : ""}${g.gift_stock <= 0 ? ` <span class="st cancelled">out of stock — paused</span>` : ""}</td>
+        <td>${g.per_item ? "1 per item" : "1 per order"}</td>
+        <td><button class="st ${g.active ? "delivered" : ""}" data-gt="${g.id}" data-v="${g.active ? 0 : 1}" style="cursor:pointer">${g.active ? "On" : "Off"}</button></td>
+        <td><button class="btn sm ghost" data-gdel="${g.id}">Delete</button></td></tr>`).join("")}</table>` : `<p class="muted" style="padding:12px">No free gifts yet.</p>`}</div>`);
+  const f = $("#gf");
+  const rowsFor = (q, includeDrafts) => prods.filter((x) => (includeDrafts || x.active) && (!q || x.title.toLowerCase().includes(q))).slice(0, 80);
+  const renderTrig = () => {
+    const q = $("#gtq").value.toLowerCase();
+    $("#gtl").innerHTML = rowsFor(q).sort((a, b) => trig.has(b.id) - trig.has(a.id)).map((x) => `<label class="flex" style="padding:6px;gap:10px;cursor:pointer"><input type="checkbox" data-gt-p="${x.id}" ${trig.has(x.id) ? "checked" : ""}>${thumb(x)}<span>${esc(x.title.slice(0, 80))}</span><span class="muted" style="margin-left:auto">${money(x.price)}</span></label>`).join("") || `<p class="muted">No matches</p>`;
+    $("#gtl").querySelectorAll("[data-gt-p]").forEach((c) => (c.onchange = () => { c.checked ? trig.add(c.dataset.gtP) : trig.delete(c.dataset.gtP); $("#gtc").textContent = `(${trig.size})`; }));
+  };
+  const renderGift = () => {
+    const q = $("#ggq").value.toLowerCase();
+    $("#ggl").innerHTML = rowsFor(q, true).sort((a, b) => (b.id === giftId) - (a.id === giftId)).map((x) => `<label class="flex" style="padding:6px;gap:10px;cursor:pointer"><input type="radio" name="gpick" value="${x.id}" ${x.id === giftId ? "checked" : ""}>${thumb(x)}<span>${esc(x.title.slice(0, 80))}${x.active ? "" : ' <span class="muted">(draft)</span>'}</span><span class="muted" style="margin-left:auto">stock ${x.stock}</span></label>`).join("") || `<p class="muted">No matches</p>`;
+    $("#ggl").querySelectorAll('input[name="gpick"]').forEach((r) => (r.onchange = () => {
+      giftId = r.value; const g = prods.find((x) => x.id === giftId);
+      $("#gsel").textContent = "— " + g.title.slice(0, 50);
+      const combos = (g.variants || []).reduce((acc, v) => acc.flatMap((a) => v.options.map((o) => (a ? a + " / " : "") + o)), [""]).filter(Boolean);
+      $("#gvarw").hidden = !combos.length; f.variant.innerHTML = combos.map((c) => `<option>${esc(c)}</option>`).join("");
+    }));
+  };
+  $("#gtq").oninput = renderTrig; $("#ggq").oninput = renderGift; renderTrig(); renderGift();
+  f.scope.onchange = () => { $("#gtrig").hidden = f.scope.value !== "products"; };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const sc = f.scope.value;
+    if (sc === "products" && !trig.size) return toast("Choose which products earn the gift");
+    if (!giftId) return toast("Choose the gift product");
+    try {
+      await api("/api/admin/gifts", "POST", { scope: sc === "products" ? "products" : "collection", target: sc === "products" ? [...trig] : sc.slice(2), giftId,
+        giftVariant: $("#gvarw").hidden ? "" : f.variant.value, perItem: !!f.perItem.value, endsAt: f.ends.value ? new Date(f.ends.value + "T23:59:59").toISOString() : null, label: f.label.value });
+      toast("🎁 Free gift is on"); promos();
+    } catch (er) { toast(er.message); }
+  };
+  main().querySelectorAll("[data-gt]").forEach((b) => (b.onclick = async () => { await api("/api/admin/gifts/" + b.dataset.gt, "PATCH", { active: b.dataset.v === "1" }); promos(); }));
+  main().querySelectorAll("[data-gdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this free gift offer?")) return; await api("/api/admin/gifts/" + b.dataset.gdel, "DELETE"); promos(); }));
 }
 
 /* ---------- Subscribers ---------- */

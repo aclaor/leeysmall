@@ -29,7 +29,7 @@ export async function createPaypalOrder(env, order) {
           breakdown: { item_total: { currency_code: "USD", value: amt(itemTotal) }, shipping: { currency_code: "USD", value: amt(order.shipping) },
             discount: { currency_code: "USD", value: amt(order.discount) } },
         },
-        items: order.items.map((i) => ({ name: (i.title + (i.variant ? " - " + i.variant : "")).slice(0, 127), quantity: String(i.qty),
+        items: order.items.filter((i) => i.price > 0).map((i) => ({ name: (i.title + (i.variant ? " - " + i.variant : "")).slice(0, 127), quantity: String(i.qty),
           unit_amount: { currency_code: "USD", value: amt(i.price) }, category: "PHYSICAL_GOODS" })),
       }],
       payment_source: { paypal: { experience_context: { brand_name: "LeeysPremium", shipping_preference: "NO_SHIPPING", user_action: "PAY_NOW" } } },

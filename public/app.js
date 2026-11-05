@@ -92,7 +92,7 @@ function renderDrawer() {
   ${lines.length ? shipProgress(sub) + `<div class="drawer-items">${lines.map((l) => `
     <div class="line"><a class="thumb" href="/products/${l.id}" data-link>${art(l.p)}</a>
       <div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div>
-      <b>${money(l.p.price * l.qty)}</b></div>`).join("")}</div>
+      <b>${money(l.p.price * l.qty)}</b></div>`).join("")}${giftRows(cartGifts(lines))}</div>
     <div class="drawer-foot"><div class="row-between"><span>Subtotal</span><b>${money(sub)}</b></div><small class="muted">Taxes and shipping calculated at checkout.</small>
       <a class="btn accent block" href="/checkout" data-link>Checkout</a><a class="btn ghost block" href="/cart" data-link>View cart</a></div>`
   : `<div class="empty"><p>Your cart is empty.</p><a class="btn" href="/collections/all" data-link>Start shopping</a></div>`}`;
@@ -102,7 +102,17 @@ function closeAll() { $("#drawer").hidden = true; $("#overlay").hidden = true; $
 
 /* ---------- UI pieces ---------- */
 /* ---------- Promos, delivery estimates, countdowns ---------- */
-let PROMO = { promos: [], vouchers: [], schedules: [] };
+let PROMO = { promos: [], vouchers: [], schedules: [], gifts: [] };
+const giftFor = (p) => (PROMO.gifts || []).find((g) => (g.scope === "collection" ? g.target === p.collection : (g.target || []).includes(p.id)) && g.gift.id !== p.id);
+// Gifts earned by the current cart (the server adds them to the order for real at checkout)
+function cartGifts(lines) {
+  return (PROMO.gifts || []).map((g) => {
+    const q = lines.filter((l) => (g.scope === "collection" ? g.target === l.p.collection : (g.target || []).includes(l.id))).reduce((s, l) => s + l.qty, 0);
+    return q ? { ...g.gift, qty: g.perItem ? Math.min(q, 10) : 1, label: g.label } : null;
+  }).filter(Boolean);
+}
+const giftRows = (gs) => gs.map((g) => `<div class="line gift-line"><div class="thumb">${g.image ? `<img src="${esc(g.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<div class="gift-ico">🎁</div>`}</div>
+  <div><div class="t">🎁 ${esc(g.title)}</div><div class="v">${g.variant ? esc(g.variant) + " · " : ""}Free gift${g.qty > 1 ? " × " + g.qty : ""}${g.value ? ` · worth ${money(g.value * g.qty)}` : ""}</div></div><b class="free">FREE</b></div>`).join("");
 const schedFor = (p) => (PROMO.schedules || []).filter((s) => s.scope === "all" || (s.scope === "collection" && s.target === p.collection) || (s.scope === "products" && (s.target || []).includes(p.id))).sort((a, b) => b.percent - a.percent)[0];
 const schedForCat = (id) => (PROMO.schedules || []).filter((s) => s.scope === "all" || (s.scope === "collection" && s.target === id)).sort((a, b) => b.percent - a.percent)[0];
 const shopCountry = () => { try { return localStorage.getItem("lp_country") || CONFIG.country || "US"; } catch { return CONFIG.country || "US"; } };
@@ -134,7 +144,7 @@ function card(p) {
   return `<div class="card"><div class="media-wrap"><a href="/products/${p.id}" data-link><div class="media">
       ${p.stock === 0 ? `<span class="badge out">Sold out</span>` : p.promo ? `<span class="badge flash">⚡<span class="fl-txt"> ${esc(p.promo.label)}</span></span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : ""}
       ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}
-      <div class="ribbons">${p.video ? `<span class="rb vid">▶ Video</span>` : ""}${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">Voucher ${v.percent}% off</span>` : ""}</div></div></a>
+      <div class="ribbons">${giftFor(p) ? `<span class="rb gift">🎁 Free gift</span>` : ""}${p.video ? `<span class="rb vid">▶ Video</span>` : ""}${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">Voucher ${v.percent}% off</span>` : ""}</div></div></a>
     ${p.stock > 0 ? `<button class="btn quick-add" data-add="${p.id}">Quick add</button>` : ""}</div>
     <a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>
     <div class="price ${off ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s>` : ""}</div>
@@ -425,6 +435,8 @@ function product(id) {
         : (() => { const s = schedFor(p); return s ? `<div class="sched-line big" style="margin-top:12px">📅 ${esc(s.label)}: ${s.percent}% off this item — ${esc(s.text)}</div>` : ""; })()}
       <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
       ${PROMO.vouchers.length ? `<div class="pdp-vouchers">${PROMO.vouchers.map((v) => `<button class="vchip" data-claim="${esc(v.code)}">🎟 ${v.percent}% off${v.min_spend ? ` · min ${money(v.min_spend)}` : ""}</button>`).join("")}</div>` : ""}
+      ${(() => { const g = giftFor(p); return g ? `<div class="gift-box">${g.gift.image ? `<img src="${esc(g.gift.image)}" alt="">` : `<div class="gift-ico">🎁</div>`}<div><b>🎁 FREE GIFT with this item</b>
+        <span>${esc(g.gift.title)}${g.gift.variant ? " (" + esc(g.gift.variant) + ")" : ""}${g.gift.value ? ` — worth ${money(g.gift.value)}` : ""}</span><small>Added to your order automatically${g.perItem ? " — one per item you buy" : ""}.</small></div></div>` : ""; })()}
       ${p.price >= FREE_SHIP ? `<div class="perk">✓ Free US shipping on this item</div>` : `<div class="perk">Free US shipping on orders over ${money(FREE_SHIP)}</div>`}
       ${stockTxt}
       ${p.variants.map((v) => `<div class="opt"><div class="opt-label">${esc(v.name)}: <span data-sel="${esc(v.name)}">${esc(sel[v.name])}</span></div><div class="opt-values">${v.options.map((o) => `<button data-opt="${esc(v.name)}" data-val="${esc(o)}" class="${o === sel[v.name] ? "on" : ""}">${esc(o)}</button>`).join("")}</div></div>`).join("")}
@@ -464,7 +476,7 @@ function cartPage() {
   const lines = cart.lines(), sub = cart.subtotal();
   app.innerHTML = `<div class="wrap prose" style="max-width:900px"><h1>Your cart</h1>${lines.length ? `
     ${shipProgress(sub)}${lines.map((l) => `<div class="line"><a class="thumb" href="/products/${l.id}" data-link>${art(l.p)}</a><div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
-    <div class="row-between" style="margin:24px 0 8px;font-size:18px"><span>Subtotal</span><b>${money(sub)}</b></div><p class="muted">Taxes and shipping calculated at checkout.</p>
+    ${giftRows(cartGifts(lines))}    <div class="row-between" style="margin:24px 0 8px;font-size:18px"><span>Subtotal</span><b>${money(sub)}</b></div><p class="muted">Taxes and shipping calculated at checkout.</p>
     <a class="btn accent" href="/checkout" data-link>Checkout</a>`
   : `<div class="empty"><p>Your cart is empty.</p><a class="btn" href="/collections/all" data-link>Start shopping</a></div>`}</div>`;
 }
@@ -515,6 +527,7 @@ function checkout() {
       $("#totals").innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(q.subtotal)}</span></div>
         ${q.discount ? `<div class="row-between"><span>Voucher (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
         ${q.codeNote ? `<div class="muted" style="font-size:13px">🎟 ${esc(q.codeNote)}</div>` : ""}
+        ${(q.gifts || []).map((g) => `<div class="row-between"><span>🎁 ${esc(g.title)}${g.qty > 1 ? " × " + g.qty : ""}</span><span class="free">FREE</span></div>`).join("")}
         <div class="row-between"><span>Shipping</span><span>${q.shipping ? money(q.shipping) : "Free"}</span></div>
         <div class="row-between grand"><span>Total</span><span>USD ${money(q.total)}</span></div>`;
       err("");
