@@ -7,7 +7,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const STATUSES = ["paid", "action_needed", "processing", "shipped", "delivered", "cancelled", "refunded"];
 const LABEL = { paid: "Paid", action_needed: "Action needed", processing: "Sent to supplier", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", refunded: "Refunded", pending: "Unpaid" };
 const SUPPLIER = { cj: "CJ Dropshipping", aliexpress: "AliExpress (manual)", manual: "Manual", sample: "Sample" };
-let tab = location.hash.slice(1) || "dashboard", collections = [];
+let tab = location.hash.slice(1) || "dashboard", collections = [], catRules = [];
 
 function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("show"); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), 2600); }
 async function api(path, method = "GET", data) {
@@ -38,6 +38,7 @@ async function shell() {
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
   try { collections = await api("/api/admin/collections"); } catch { return; }
   refreshChatBadge();
+  catRules = await api("/api/admin/cat-rules").catch(() => []);
   show(tab);
 }
 window.addEventListener("hashchange", () => { const t = location.hash.slice(1); if (t && $("#main")) show(t); });
@@ -246,19 +247,37 @@ async function products() {
   $("#autoSort").onclick = () => autoSortModal(list);
   renderTable();
 }
+function rulesModal(list) {
+  let rules = catRules.map((r) => ({ ...r }));
+  const m = modal(`<h2>⚙ Category rules</h2><p class="muted" style="margin-top:-6px">Your rules always win. If a product name contains the word, it goes to that category — for imports and for Auto-sort. Example: <b style="color:#fff">watch → Electronics</b>.</p>
+    <div id="rlist"></div>
+    <form id="radd" class="flex" style="gap:8px;margin-top:12px;flex-wrap:wrap"><input class="inp" name="kw" placeholder="Word in product name, e.g. watch" style="flex:1;min-width:180px" required>
+      <select class="inp" name="cat" style="width:auto">${collections.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select><button class="btn accent">Add rule</button></form>
+    <div class="row-between" style="margin-top:18px"><button class="btn ghost" id="rback">← Back to Auto-sort</button><span class="muted" id="rsaved" style="font-size:13px"></span></div>`);
+  const save = async () => { catRules = await api("/api/admin/cat-rules", "PUT", { rules }); rules = catRules.map((r) => ({ ...r })); $("#rsaved", m).textContent = "Saved ✓"; render(); };
+  const render = () => {
+    $("#rlist", m).innerHTML = rules.length ? rules.map((r, i) => `<div class="row-between" style="padding:8px 0;border-bottom:1px solid var(--line)"><span><b style="color:#fff">${esc(r.kw)}</b> → ${esc(collections.find((c) => c.id === r.cat)?.name || r.cat)}
+      <span class="muted" style="font-size:12px">· ${list.filter((p) => classify({ title: p.title }, null, [r])?.rule).length} products</span></span><button class="btn sm ghost" data-rdel="${i}">Remove</button></div>`).join("")
+      : `<p class="muted">No rules yet.</p>`;
+    m.querySelectorAll("[data-rdel]").forEach((b) => (b.onclick = () => { rules.splice(Number(b.dataset.rdel), 1); save(); }));
+  };
+  render();
+  $("#radd", m).onsubmit = (e) => { e.preventDefault(); const f = e.target; rules = rules.filter((r) => r.kw !== f.kw.value.trim().toLowerCase()); rules.push({ kw: f.kw.value.trim().toLowerCase(), cat: f.cat.value }); f.kw.value = ""; save(); };
+  $("#rback", m).onclick = () => { m.remove(); autoSortModal(list); };
+}
 function autoSortModal(list) {
   const ids = collections.map((c) => c.id), cname = (id) => collections.find((c) => c.id === id)?.name || "No category";
   const rows = [];
   let unsure = 0;
   for (const p of list) {
-    const r = classify({ title: p.title, description: p.description }, ids);
+    const r = classify({ title: p.title, description: p.description }, ids, catRules);
     if (!r) { if (!ids.includes(p.collection)) unsure++; continue; }
     if (r.id !== p.collection) rows.push({ p, to: r.id, sure: r.sure, on: r.sure });
   }
   rows.sort((a, b) => (b.sure - a.sure) || a.to.localeCompare(b.to));
   const sel = (r, i) => `<select class="inp" data-to="${i}" style="padding:6px 8px;width:auto;max-width:180px">${collections.map((c) => `<option value="${c.id}" ${c.id === r.to ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`;
   const summary = () => { const by = {}; rows.filter((r) => r.on).forEach((r) => (by[r.to] = (by[r.to] || 0) + 1)); return Object.entries(by).map(([k, n]) => `${esc(cname(k))} ${n}`).join(" · ") || "nothing selected"; };
-  const m = modal(`<div class="row-between" style="gap:10px;flex-wrap:wrap"><h2 style="margin:0">✨ Auto-sort categories</h2><button class="btn sm ghost" id="asClose">Close</button></div>
+  const m = modal(`<div class="row-between" style="gap:10px;flex-wrap:wrap"><h2 style="margin:0">✨ Auto-sort categories</h2><div class="flex" style="gap:8px"><button class="btn sm ghost" id="asRules">⚙ My rules (${catRules.length})</button><button class="btn sm ghost" id="asClose">Close</button></div></div>
     <p class="muted" style="margin:8px 0 14px">Each product's name and description was checked to suggest its best category. <b style="color:#fff">${rows.filter((r) => r.sure).length}</b> confident suggestions are ticked; <b style="color:var(--warn)">${rows.filter((r) => !r.sure).length}</b> less certain ones are unticked — tick the ones that look right, or change the category in the dropdown.${unsure ? ` ${unsure} uncategorised product${unsure === 1 ? "" : "s"} couldn't be matched and stay as they are.` : ""}</p>
     ${rows.length ? `<div class="flex" style="gap:8px;margin-bottom:10px;flex-wrap:wrap"><button class="btn sm ghost" id="asAll">Tick all</button><button class="btn sm ghost" id="asSure">Only confident</button><button class="btn sm ghost" id="asNone">Untick all</button></div>
     <div class="tbl-wrap" style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:14px"><table><tr><th style="width:30px"></th><th>Product</th><th>Now</th><th>Move to</th></tr>
@@ -268,6 +287,7 @@ function autoSortModal(list) {
     : `<p style="color:var(--good)">Everything already looks correctly sorted. 🎉</p>`}`);
   const upd = () => { const n = rows.filter((r) => r.on).length; const b = $("#asApply", m); if (b) { b.textContent = `Move ${n} product${n === 1 ? "" : "s"}`; b.disabled = !n; $("#asSum", m).innerHTML = summary(); } };
   $("#asClose", m).onclick = () => m.remove();
+  $("#asRules", m).onclick = () => { m.remove(); rulesModal(list); };
   m.querySelectorAll("[data-as]").forEach((c) => (c.onchange = () => { rows[c.dataset.as].on = c.checked; upd(); }));
   m.querySelectorAll("[data-to]").forEach((s2) => (s2.onchange = () => { const r = rows[s2.dataset.to]; r.to = s2.value; r.on = true; m.querySelector(`[data-as="${s2.dataset.to}"]`).checked = true; upd(); }));
   const setAll = (fn) => { rows.forEach((r, i) => { r.on = fn(r); m.querySelector(`[data-as="${i}"]`).checked = r.on; }); upd(); };
@@ -364,7 +384,7 @@ const AUTO_RULES = [
 ];
 // Best store category for a CJ item: product name first, CJ category second. "" = not sure (left uncategorised).
 const autoCategory = (path, title = "") => {
-  const r = classify({ title, category: path }, collections.map((c) => c.id));
+  const r = classify({ title, category: path }, collections.map((c) => c.id), catRules);
   if (r) return r.id;
   for (const [id, re] of AUTO_RULES) if (re.test(path || "") && collections.some((c) => c.id === id)) return id;
   return "";

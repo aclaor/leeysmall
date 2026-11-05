@@ -22,11 +22,11 @@ const K = {
     weak: ["training", "muscle", "travel", "portable", "waterproof"],
   },
   fashion: {
-    strong: ["dress", "dresses", "shirt", "t-shirt", "tshirt", "tee", "blouse", "top", "tops", "sweater", "hoodie", "jacket", "coat", "jeans", "pants", "trousers", "shorts", "skirt", "leggings", "jumpsuit", "romper", "cardigan", "vest", "suit", "lingerie", "bra", "underwear", "panties", "boxer", "briefs", "pajama", "pajamas", "sleepwear", "socks", "stockings", "swimsuit", "bikini", "swimwear", "shoe", "shoes", "sneaker", "sneakers", "boots", "sandals", "slippers", "heels", "loafers", "handbag", "bag", "bags", "purse", "wallet", "tote", "clutch", "crossbody", "shoulder bag", "jewelry", "jewellery", "necklace", "bracelet", "earring", "earrings", "ring", "rings", "pendant", "anklet", "brooch", "watch", "watches", "sunglasses", "eyeglasses", "hat", "cap", "beanie", "scarf", "gloves", "belt", "tie", "hair clip", "headband", "women's", "womens", "men's", "mens", "ladies", "fashion", "apparel", "clothing", "outfit", "cotton", "denim", "silk", "lace", "luggage", "suitcase"],
+    strong: ["dress", "dresses", "shirt", "t-shirt", "tshirt", "tee", "blouse", "top", "tops", "sweater", "hoodie", "jacket", "coat", "jeans", "pants", "trousers", "shorts", "skirt", "leggings", "jumpsuit", "romper", "cardigan", "vest", "suit", "lingerie", "bra", "underwear", "panties", "boxer", "briefs", "pajama", "pajamas", "sleepwear", "socks", "stockings", "swimsuit", "bikini", "swimwear", "shoe", "shoes", "sneaker", "sneakers", "boots", "sandals", "slippers", "heels", "loafers", "handbag", "bag", "bags", "purse", "wallet", "tote", "clutch", "crossbody", "shoulder bag", "jewelry", "jewellery", "necklace", "bracelet", "earring", "earrings", "ring", "rings", "pendant", "anklet", "brooch", "sunglasses", "eyeglasses", "hat", "cap", "beanie", "scarf", "gloves", "belt", "tie", "hair clip", "headband", "women's", "womens", "men's", "mens", "ladies", "fashion", "apparel", "clothing", "outfit", "cotton", "denim", "silk", "lace", "luggage", "suitcase"],
     weak: ["women", "men", "woman", "man", "wear", "style", "casual", "elegant", "vintage", "trendy", "slim fit", "loose"],
   },
   electronics: {
-    strong: ["electronic", "electronics", "phone", "smartphone", "iphone", "android", "samsung", "tablet", "ipad", "laptop", "computer", "pc", "keyboard", "mouse", "monitor", "usb", "usb-c", "type-c", "hdmi", "cable", "charger", "charging", "power bank", "powerbank", "mobile power", "battery", "wireless", "bluetooth", "earbuds", "earphone", "earphones", "headphone", "headphones", "headset", "speaker", "soundbar", "microphone", "mic", "camera", "webcam", "projector", "smartwatch", "smart watch", "fitness tracker", "led", "rgb", "smart home", "smart plug", "smart bulb", "router", "wifi", "adapter", "hub", "dock", "ssd", "hard drive", "memory card", "sd card", "flash drive", "gaming", "game controller", "gamepad", "console", "vr", "drone", "tripod", "selfie stick", "ring light", "phone case", "screen protector", "phone holder", "phone stand", "magsafe", "magnetic charger", "earbud", "tws", "anc", "electric", "digital", "gadget", "gadgets", "tech"],
+    strong: ["watch", "watches", "wristwatch", "watch band", "watch strap", "watchband", "electronic", "electronics", "phone", "smartphone", "iphone", "android", "samsung", "tablet", "ipad", "laptop", "computer", "pc", "keyboard", "mouse", "monitor", "usb", "usb-c", "type-c", "hdmi", "cable", "charger", "charging", "power bank", "powerbank", "mobile power", "battery", "wireless", "bluetooth", "earbuds", "earphone", "earphones", "headphone", "headphones", "headset", "speaker", "soundbar", "microphone", "mic", "camera", "webcam", "projector", "smartwatch", "smart watch", "fitness tracker", "led", "rgb", "smart home", "smart plug", "smart bulb", "router", "wifi", "adapter", "hub", "dock", "ssd", "hard drive", "memory card", "sd card", "flash drive", "gaming", "game controller", "gamepad", "console", "vr", "drone", "tripod", "selfie stick", "ring light", "phone case", "screen protector", "phone holder", "phone stand", "magsafe", "magnetic charger", "earbud", "tws", "anc", "electric", "digital", "gadget", "gadgets", "tech"],
     weak: ["smart", "power", "light", "lamp", "display", "screen", "sensor", "remote"],
   },
   "home-kitchen": {
@@ -39,8 +39,14 @@ const norm = (s) => " " + String(s || "").toLowerCase().replace(/[^a-z0-9'\- ]+/
 const hits = (text, word) => text.includes(" " + word + " ") || (word.includes(" ") && text.includes(word)) ? 1 : 0;
 
 // Returns { id, score, runnerUp } or null. `allowed` = list of category ids that exist in the store.
-export function classify({ title = "", category = "", description = "" }, allowed) {
+// rules: [{ kw: "watch", cat: "electronics" }, …] set by the store owner — they always win.
+export function classify({ title = "", category = "", description = "" }, allowed, rules = []) {
   const t = norm(title), c = norm(category), d = norm(String(description).slice(0, 400));
+  for (const r of rules || []) {
+    const kw = norm(r.kw).trim();
+    if (kw && (!allowed || allowed.includes(r.cat)) && (t.includes(" " + kw + " ") || (kw.includes(" ") && t.includes(kw)) || t.includes(" " + kw + "s ")))
+      return { id: r.cat, score: 99, runnerUp: 0, sure: true, rule: r.kw };
+  }
   const scores = [];
   for (const [id, kw] of Object.entries(K)) {
     if (allowed && !allowed.includes(id)) continue;
@@ -51,6 +57,7 @@ export function classify({ title = "", category = "", description = "" }, allowe
   }
   // Specific phrases win over generic ones
   if (/ car (mount|holder|charger|phone|vacuum|seat|cover|wash|air|organizer|accessor)/.test(t) && scores.find((x) => x[0] === "automotive")) scores.find((x) => x[0] === "automotive")[1] += 6;
+  if (/ (smart ?watch|watch(es)?|wristwatch|watch ?band|watch ?strap) /.test(t) && scores.find((x) => x[0] === "electronics")) scores.find((x) => x[0] === "electronics")[1] += 12;
   if (/ (dog|cat|pet) /.test(t) && scores.find((x) => x[0] === "pets")) scores.find((x) => x[0] === "pets")[1] += 6;
   if (/ (baby|kids?|children|toddler|infant) /.test(t) && scores.find((x) => x[0] === "toys-kids")) scores.find((x) => x[0] === "toys-kids")[1] += 4;
   scores.sort((a, b) => b[1] - a[1]);

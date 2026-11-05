@@ -346,6 +346,12 @@ async function admin(req, env, ctx, path, m, url) {
   if (path === "/api/admin/seo/submit" && m === "POST") {
     try { return json(await pingIndexNow(env, siteUrl(env, req), await allSitePaths(env))); } catch (e) { return bad(e.message, 502); }
   }
+  if (path === "/api/admin/cat-rules" && m === "GET") return json(parse(await getSetting(env, "cat_rules"), []));
+  if (path === "/api/admin/cat-rules" && m === "PUT") {
+    const rules = ((await body(req)).rules || []).map((r) => ({ kw: str(r.kw, 60).toLowerCase(), cat: str(r.cat, 40) })).filter((r) => r.kw && r.cat).slice(0, 200);
+    await setSetting(env, "cat_rules", JSON.stringify(rules));
+    return json(rules);
+  }
   if (path === "/api/admin/hero" && m === "PUT") {
     const ids = ((await body(req)).ids || []).map((x) => str(x, 100)).filter(Boolean).slice(0, 12);
     await setSetting(env, "hero_slides", JSON.stringify([...new Set(ids)]));
@@ -560,7 +566,7 @@ async function admin(req, env, ctx, path, m, url) {
       let collection = str(b.collection, 40);
       if (!collection || collection === "auto") {
         const allowed = (await env.DB.prepare("SELECT id FROM collections").all()).results.map((c) => c.id);
-        collection = classify({ title: d.title, category: str(b.cjCategory, 300), description: d.description }, allowed)?.id || null;
+        collection = classify({ title: d.title, category: str(b.cjCategory, 300), description: d.description }, allowed, parse(await getSetting(env, "cat_rules"), []))?.id || null;
       }
       const rec = cjToRecord(d, { markup: Number(b.markup) || 2.5, collection, ships: st.us ? "us" : "intl" });
       rec.stock = Math.min(st.total || 0, 999) || 100;
