@@ -504,7 +504,7 @@ function product(id) {
   const stockTxt = p.stock === 0 ? `<div class="stock none">Sold out</div>` : p.stock < 60 ? `<div class="stock low">Only ${p.stock} left — order soon</div>` : `<div class="stock">In stock, ready to ship</div>`;
   app.innerHTML = `<div class="wrap"><div class="pdp">
     <div class="gallery"><div class="main" id="mainImg">${p.video ? videoTag(p, true) : art(p, 0)}</div><div class="thumbs">${p.video ? `<button data-video class="on vthumb" aria-label="Play video">${art(p, 0)}<span>▶</span></button>` : ""}${[...Array(Math.min(4, p.images?.length || 4)).keys()].map((i) => `<button data-img="${i}" class="${i === 0 && !p.video ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
-    <div><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/collections/${coll.id}" data-link>${esc(coll.name)}</a></div>
+    <div><button class="back-link" id="pdpBack">← Back</button><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/collections/${coll.id}" data-link>${esc(coll.name)}</a></div>
       <h1>${esc(p.title)}</h1>${p.sold ? `<div class="muted" style="font-size:14px">${p.sold.toLocaleString()} sold</div>` : ""}
       ${p.promo ? `<div class="flash-bar"><span>⚡ ${esc(p.promo.label)}</span><span>Ends in <b data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</b></span></div>`
         : (() => { const s = schedFor(p); return s ? `<div class="sched-line big" style="margin-top:12px">📅 ${esc(s.label)}: ${s.percent}% off this item — ${esc(s.text)}</div>` : ""; })()}
@@ -529,6 +529,7 @@ function product(id) {
     <section class="section" style="padding-top:0"><div class="section-head"><h2>You may also like</h2></div><div class="grid" id="related">${related.slice(0, shown).map(card).join("")}</div>
       ${related.length > shown ? `<div style="text-align:center;margin-top:26px"><button class="btn ghost" id="moreRelated">Show more</button></div>` : ""}</section></div>`;
   const variantStr = () => Object.values(sel).join(" / ");
+  $("#pdpBack").onclick = goBack;
   const more = $("#moreRelated");
   if (more) more.onclick = () => { $("#related").insertAdjacentHTML("beforeend", related.slice(shown, shown + 12).map(card).join("")); shown += 12; if (shown >= related.length) more.remove(); };
   app.querySelectorAll("[data-opt]").forEach((b) => (b.onclick = () => {
@@ -712,8 +713,16 @@ function route() {
   else if ((m = pathname.match(/^\/pages\/([\w-]+)$/))) contentPage(m[1]);
   else notFound();
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === pathname));
+  $("#backBtn").hidden = pathname === "/";
 }
-function go(url, replace) { history[replace ? "replaceState" : "pushState"]({}, "", url); route(); }
+// Each in-store page remembers how deep we are, so Back returns to the previous store page
+// (or a sensible parent page when someone lands straight on a product from Google or a shared link).
+function go(url, replace) { const d = history.state?.d || 0; history[replace ? "replaceState" : "pushState"]({ d: replace ? d : d + 1 }, "", url); route(); }
+function goBack() {
+  if ((history.state?.d || 0) > 0) return history.back();
+  const m = location.pathname.match(/^\/products\/([\w-]+)/), p = m && PRODUCTS.find((x) => x.id === m[1]);
+  go(p && p.collection ? "/collections/" + p.collection : location.pathname.startsWith("/collections/") ? "/categories" : "/", true);
+}
 
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a[data-link]");
@@ -734,6 +743,7 @@ $("#searchBar").onsubmit = (e) => { e.preventDefault(); const q = $("#searchInpu
 $("#newsletter").onsubmit = async (e) => { e.preventDefault(); const f = e.target; try { await api("/api/subscribe", { email: f.querySelector("input").value }); f.innerHTML = "<p>Thanks! You're subscribed.</p>"; } catch (er) { toast(er.message); } };
 $("#menuBtn").onclick = () => { $("#mobileNav").hidden = false; $("#overlay").hidden = false; };
 window.addEventListener("popstate", route);
+$("#backBtn").onclick = goBack;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
 
 (async function init() {

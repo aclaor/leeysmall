@@ -58,6 +58,9 @@ h4 { font-family: var(--head); font-weight: 600; letter-spacing: .02em; }
 .icon-btn:hover { background: rgba(255,255,255,.07); }
 .icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .menu-btn { display: none; }
+.back-btn { margin-right: -10px; }
+.back-link { background: none; border: 0; color: var(--blue-2); font-weight: 600; font-size: 14px; padding: 0 0 10px; display: inline-flex; gap: 6px; }
+.back-link:hover { color: #fff; }
 .cart-count { position: absolute; top: 3px; right: 2px; min-width: 18px; height: 18px; border-radius: 9px; background: linear-gradient(135deg, var(--blue-2), var(--blue-deep)); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; padding: 0 4px; box-shadow: 0 0 12px rgba(47,140,255,.7); }
 .cart-count.zero { display: none; }
 .search-bar { border-top: 1px solid var(--line); padding: 12px 0; }
@@ -617,6 +620,7 @@ details.acc p { color: var(--ink-2); margin: 10px 0 0; font-size: 15px; }
   .two { grid-template-columns: 1fr; }
   .section-head h2 { font-size: 25px; }
   #installIcon { display: none !important; }
+  .header-row { gap: 2px; } .header-row .icon-btn { width: 38px; } .logo { font-size: 20px; } .header-actions { gap: 0; } .back-btn { margin-right: -6px; }
   .showcase { height: 380px; }
   .sc-card { width: 60%; }
   .sc-card[data-pos="1"] { transform: translate(-50%, -50%) translateX(66%) translateZ(-120px) rotateY(-22deg) scale(.7); }
