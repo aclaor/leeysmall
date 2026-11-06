@@ -155,7 +155,7 @@ function card(p) {
   return `<div class="card"><div class="media-wrap"><a href="/products/${p.id}" data-link><div class="media">
       ${p.stock === 0 ? `<span class="badge out">Sold out</span>` : p.promo ? `<span class="badge flash">⚡<span class="fl-txt"> ${esc(p.promo.label)}</span></span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : ""}
       ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}
-      <div class="ribbons">${giftFor(p) ? `<span class="rb gift">🎁 Free gift</span>` : ""}${p.video ? `<span class="rb vid">▶ Video</span>` : ""}${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">Voucher ${v.percent}% off</span>` : ""}</div></div></a>
+      <div class="ribbons">${giftFor(p) ? `<span class="rb gift">🎁 Free gift</span>` : ""}${p.video ? `<span class="rb vid">▶ Video</span>` : ""}${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">${v.type === "shipping" ? "Free ship voucher" : v.type === "amount" ? `${money(v.amount).replace(".00", "")} off voucher` : `Voucher ${v.percent}% off`}</span>` : ""}</div></div></a>
     ${p.stock > 0 ? `<button class="btn quick-add" data-add="${p.id}">Quick add</button>` : ""}</div>
     <a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>
     <div class="price ${off ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s>` : ""}</div>
@@ -280,15 +280,72 @@ function home() {
   startShowcase();
   bindVouchers();
 }
+/* ---------- Vouchers (Shopee-style) ---------- */
+const wallet = () => { try { const w = JSON.parse(localStorage.getItem("lp_vouchers") || "[]"); const old = localStorage.getItem("lp_voucher"); return old && !w.includes(old) ? [...w, old] : w; } catch { return []; } };
+const saveWallet = (w) => { try { localStorage.setItem("lp_vouchers", JSON.stringify([...new Set(w)].slice(-30))); } catch {} };
+function vCheck(v, q) {
+  // q: last quote — subtotal and shipping before vouchers
+  const sub = q?.subtotal || 0, ship = (q?.shipping || 0);
+  if (v.ends_at && new Date(v.ends_at.replace(" ", "T") + "Z") < new Date()) return { ok: false, reason: "Expired" };
+  if (sub < (v.min_spend || 0)) return { ok: false, reason: `Add ${money(v.min_spend - sub)} more to use` };
+  if (v.type === "shipping") { if (!(ship > 0)) return { ok: false, reason: "Your shipping is already free" }; return { ok: true, amount: Math.min(ship, v.amount > 0 ? v.amount : ship) }; }
+  if (v.type === "amount") return { ok: true, amount: Math.min(v.amount, sub) };
+  let a = sub * v.percent / 100; if (v.max_off > 0) a = Math.min(a, v.max_off); return { ok: true, amount: Math.round(a * 100) / 100 };
+}
+function bestVouchers(q) {
+  const all = [...PROMO.vouchers, ...(q.extraVouchers || [])];
+  const pick = (list) => list.map((v) => [v, vCheck(v, q)]).filter(([, r]) => r.ok).sort((a, b) => b[1].amount - a[1].amount)[0]?.[0]?.code || "";
+  return { code: pick(all.filter((v) => v.type !== "shipping")), shipCode: pick(all.filter((v) => v.type === "shipping")) };
+}
+const vLeft = (v) => v.type === "shipping" ? `<b>FREE</b><span>SHIPPING</span>` : v.type === "amount" ? `<b>${money(v.amount).replace(".00", "")}</b><span>OFF</span>` : `<b>${v.percent}%</b><span>OFF</span>`;
+const vSub = (v) => [v.min_spend ? `Min. spend ${money(v.min_spend)}` : "No min. spend", v.type === "percent" && v.max_off ? `max ${money(v.max_off)} off` : v.type === "shipping" && v.amount ? `up to ${money(v.amount)}` : "",
+  v.first_order ? "First order" : "", v.ends_at ? `Valid till ${new Date(v.ends_at.replace(" ", "T") + "Z").toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""].filter(Boolean).join(" · ");
+function voucherSheet(V, done) {
+  const q = V.last || {};
+  let sel = { code: V.code, shipCode: V.shipCode };
+  const all = () => [...PROMO.vouchers, ...V.extra.filter((x) => !PROMO.vouchers.some((v) => v.code === x.code))];
+  const ov = document.createElement("div"); ov.className = "vsheet-bg";
+  const row = (v) => { const r = vCheck(v, q), key = v.type === "shipping" ? "shipCode" : "code", on = sel[key] === v.code;
+    return `<button class="vrow ${v.type} ${r.ok ? "" : "off"} ${on ? "on" : ""}" data-vc="${esc(v.code)}" data-vk="${key}" ${r.ok ? "" : "disabled"}>
+      <div class="vrow-left">${vLeft(v)}</div><div class="vrow-mid"><b>${esc(v.label || v.title)}</b><span>${esc(vSub(v))}</span>${r.ok ? `<small>Save ${money(r.amount)}</small>` : `<small class="why">${esc(r.reason)}</small>`}</div>
+      <span class="vradio"></span></button>`; };
+  const render = () => {
+    const list = all(), ship = list.filter((v) => v.type === "shipping"), disc = list.filter((v) => v.type !== "shipping");
+    const usable = (l) => l.filter((v) => vCheck(v, q).ok), unusable = list.filter((v) => !vCheck(v, q).ok);
+    ov.innerHTML = `<div class="vsheet" role="dialog" aria-label="Select voucher"><header><button class="icon-btn" data-vclose aria-label="Close"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><h3>Select voucher</h3><span></span></header>
+      <form class="vcode"><input name="c" placeholder="Enter voucher code" autocomplete="off"><button class="btn sm">Apply</button></form>
+      <div class="vlist">
+        ${usable(ship).length ? `<h4>Shipping vouchers</h4>${usable(ship).map(row).join("")}` : ""}
+        ${usable(disc).length ? `<h4>Discount vouchers</h4>${usable(disc).map(row).join("")}` : ""}
+        ${unusable.length ? `<h4>Unavailable vouchers</h4>${unusable.map(row).join("")}` : ""}
+        ${!list.length ? `<p class="muted" style="text-align:center;padding:30px">No vouchers right now. Have a code? Enter it above.</p>` : ""}</div>
+      <footer><div><span id="vcount"></span><b id="vsave"></b></div><button class="btn accent block" data-vok>OK</button></footer></div>`;
+    const n = [sel.code, sel.shipCode].filter(Boolean).length, save = [sel.code, sel.shipCode].filter(Boolean).map((c) => all().find((v) => v.code === c)).reduce((s, v) => s + (v ? vCheck(v, q).amount || 0 : 0), 0);
+    ov.querySelector("#vcount").textContent = n ? `${n} voucher${n > 1 ? "s" : ""} selected` : "No voucher selected";
+    ov.querySelector("#vsave").textContent = save ? ` · You save ${money(save)}` : "";
+    ov.querySelectorAll("[data-vc]").forEach((b) => (b.onclick = () => { const k = b.dataset.vk; sel[k] = sel[k] === b.dataset.vc ? "" : b.dataset.vc; render(); }));
+    ov.querySelector("[data-vclose]").onclick = () => ov.remove();
+    ov.querySelector("[data-vok]").onclick = () => { Object.assign(V, sel, { manual: true }); saveWallet([...wallet(), sel.code, sel.shipCode].filter(Boolean)); ov.remove(); done(); };
+    ov.querySelector(".vcode").onsubmit = async (e) => {
+      e.preventDefault(); const c = e.target.c.value.trim(); if (!c) return;
+      try { const v = await api("/api/discount", { code: c }); if (!all().some((x) => x.code === v.code)) V.extra.push(v); sel[v.type === "shipping" ? "shipCode" : "code"] = v.code; toast(`${v.title} added`); render(); }
+      catch (er) { toast(er.message); }
+    };
+  };
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  document.body.appendChild(ov); render();
+}
+
 function voucherStrip() {
   if (!PROMO.vouchers.length) return "";
-  return `<section class="vouchers"><div class="wrap"><div class="v-rail">${PROMO.vouchers.map((v) => `<div class="vcard"><div class="v-left"><b>${v.percent}%</b><span>OFF</span></div>
-    <div class="v-mid"><b>${v.min_spend ? `Min. spend ${money(v.min_spend)}` : "No minimum spend"}</b><span>Code <code>${esc(v.code)}</code></span></div>
-    <button class="btn sm accent" data-claim="${esc(v.code)}">Claim</button></div>`).join("")}</div></div></section>`;
+  const have = wallet();
+  return `<section class="vouchers"><div class="wrap"><div class="v-rail">${PROMO.vouchers.map((v) => `<div class="vcard ${v.type}"><div class="v-left">${vLeft(v)}</div>
+    <div class="v-mid"><b>${esc(v.label || v.title)}</b><span>${esc(vSub(v))}</span></div>
+    ${have.includes(v.code) ? `<button class="btn sm ghost" disabled>Claimed ✓</button>` : `<button class="btn sm accent" data-claim="${esc(v.code)}">Claim</button>`}</div>`).join("")}</div></div></section>`;
 }
 function bindVouchers() {
   document.querySelectorAll("[data-claim]").forEach((b) => (b.onclick = () => {
-    try { localStorage.setItem("lp_voucher", b.dataset.claim); } catch {}
+    saveWallet([...wallet(), b.dataset.claim]);
     navigator.clipboard?.writeText(b.dataset.claim).catch(() => {});
     b.textContent = "Claimed ✓"; b.disabled = true; toast(`Voucher ${b.dataset.claim} saved — it's applied automatically at checkout`);
   }));
@@ -452,7 +509,7 @@ function product(id) {
       ${p.promo ? `<div class="flash-bar"><span>⚡ ${esc(p.promo.label)}</span><span>Ends in <b data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</b></span></div>`
         : (() => { const s = schedFor(p); return s ? `<div class="sched-line big" style="margin-top:12px">📅 ${esc(s.label)}: ${s.percent}% off this item — ${esc(s.text)}</div>` : ""; })()}
       <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
-      ${PROMO.vouchers.length ? `<div class="pdp-vouchers">${PROMO.vouchers.map((v) => `<button class="vchip" data-claim="${esc(v.code)}">🎟 ${v.percent}% off${v.min_spend ? ` · min ${money(v.min_spend)}` : ""}</button>`).join("")}</div>` : ""}
+      ${PROMO.vouchers.length ? `<div class="pdp-vouchers">${PROMO.vouchers.map((v) => `<button class="vchip ${v.type}" data-claim="${esc(v.code)}">${v.type === "shipping" ? "🚚" : "🎟"} ${esc(v.label || v.title)}${v.min_spend ? ` · min ${money(v.min_spend)}` : ""}</button>`).join("")}</div>` : ""}
       ${(() => { const g = giftFor(p); return g ? `<div class="gift-box">${g.gift.image ? `<img src="${esc(g.gift.image)}" alt="">` : `<div class="gift-ico">🎁</div>`}<div><b>🎁 FREE GIFT with this item</b>
         <span>${esc(g.gift.title)}${g.gift.variant ? " (" + esc(g.gift.variant) + ")" : ""}${g.gift.value ? ` — worth ${money(g.gift.value)}` : ""}</span><small>Added to your order automatically${g.perItem ? " — one per item you buy" : ""}.</small></div></div>` : ""; })()}
       ${p.price >= FREE_SHIP ? `<div class="perk">✓ Free US shipping on this item</div>` : `<div class="perk">Free US shipping on orders over ${money(FREE_SHIP)}</div>`}
@@ -529,7 +586,7 @@ function checkout() {
   document.title = "Checkout — LeeysPremium";
   const lines = cart.lines();
   if (!lines.length) return go("/cart", true);
-  let code = ""; try { code = localStorage.getItem("lp_voucher") || ""; } catch {}
+  const V = { code: "", shipCode: "", manual: false, last: null, extra: [] };
   app.innerHTML = `<div class="wrap"><div class="checkout">
     <form class="co-form" id="coForm" novalidate><div class="crumbs"><a href="/cart" data-link>Cart</a> / Information / Payment</div>
       <h2>Contact</h2><div class="field"><input name="email" type="email" required placeholder="Email" autocomplete="email"></div>
@@ -544,28 +601,30 @@ function checkout() {
       <div id="coError" class="note err" hidden></div>
       <div id="paypal-buttons" style="margin-top:14px;min-height:50px"></div></form>
     <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
-      <div class="discount"><input id="code" placeholder="Voucher or discount code" value="${esc(code)}"><button type="button" class="btn" id="applyCode">Apply</button></div>
+      <button type="button" class="vpick" id="vpick"><span>🎟 <b>LeeysPremium Vouchers</b></span><span id="vpickSel" class="muted">Select or enter code ›</span></button>
       <div class="totals" id="totals"></div></div></div></div>`;
   const form = $("#coForm"), err = (m) => { const e = $("#coError"); e.textContent = m || ""; e.hidden = !m; };
   const items = () => cart.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
   const quote = async () => {
     try {
-      const q = await api("/api/quote", { items: items(), code, country: form.country.value });
+      const q = await api("/api/quote", { items: items(), code: V.code, shipCode: V.shipCode, country: form.country.value, email: form.email.value });
+      V.last = q;
+      if (!V.manual && !V.autoDone) { V.autoDone = true; const best = bestVouchers(q); if (best.code !== V.code || best.shipCode !== V.shipCode) { Object.assign(V, best); return quote(); } }
+      $("#vpickSel").innerHTML = [q.shipCode && `<span class="vtag ship">${esc(q.shipCode)}</span>`, q.code && `<span class="vtag">${esc(q.code)}</span>`].filter(Boolean).join(" ") || "Select or enter code ›";
       $("#totals").innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(q.subtotal)}</span></div>
         ${q.discount ? `<div class="row-between"><span>Voucher (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
         ${q.codeNote ? `<div class="muted" style="font-size:13px">🎟 ${esc(q.codeNote)}</div>` : ""}
         ${(q.gifts || []).map((g) => `<div class="row-between"><span>🎁 ${esc(g.title)}${g.qty > 1 ? " × " + g.qty : ""}</span><span class="free">FREE</span></div>`).join("")}
         <div class="row-between"><span>Shipping</span><span>${q.shipping ? money(q.shipping) : "Free"}</span></div>
+        ${q.shipDiscount ? `<div class="row-between"><span>Shipping voucher (${esc(q.shipCode)})</span><span>−${money(q.shipDiscount)}</span></div>` : ""}
         <div class="row-between grand"><span>Total</span><span>USD ${money(q.total)}</span></div>`;
       err("");
     } catch (e) { err(e.message); }
   };
   quote();
   form.country.onchange = quote;
-  $("#applyCode").onclick = async () => {
-    try { const d = await api("/api/discount", { code: $("#code").value }); code = d.code; try { localStorage.setItem("lp_voucher", d.code); } catch {} toast(`${d.percent}% voucher applied`); quote(); }
-    catch (e) { toast(e.message); }
-  };
+  form.email.addEventListener("change", quote);
+  $("#vpick").onclick = () => voucherSheet(V, () => quote());
   const valid = () => {
     for (const el of form.querySelectorAll("[required]")) if (!el.value.trim()) { el.focus(); err("Please fill in " + el.placeholder.toLowerCase() + "."); return false; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.value)) { form.email.focus(); err("Please enter a valid email."); return false; }
@@ -579,7 +638,7 @@ function checkout() {
       onClick: (_, actions) => (valid() ? actions.resolve() : actions.reject()),
       createOrder: async () => {
         const f = form, r = await api("/api/checkout", {
-          items: items(), code, country: f.country.value, email: f.email.value, marketing: f.marketing.checked,
+          items: items(), code: V.code, shipCode: V.shipCode, country: f.country.value, email: f.email.value, marketing: f.marketing.checked,
           address: { firstName: f.firstName.value, lastName: f.lastName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, province: f.province.value, zip: f.zip.value, phone: f.phone.value },
         }).catch((e) => { err(e.message); throw e; });
         localId = r.orderId; return r.paypalOrderId;

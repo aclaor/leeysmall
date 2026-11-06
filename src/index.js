@@ -1,4 +1,5 @@
 import { classify } from "../public/classify.js";
+import { evaluate, voucherTitle, PUBLIC_FIELDS } from "./vouchers.js";
 import { activeGifts, giftLines, publicGifts } from "./gifts.js";
 import { activePromos, priced, schedules, windowEnd, scheduleText } from "./promos.js";
 import { mediaReady, startUpload, uploadPart, completeUpload, deleteObject, serveMedia, embedUrl } from "./media.js";
@@ -68,15 +69,22 @@ async function buildOrder(env, b) {
   }
   const subtotal = r2(lines.reduce((s, l) => s + l.price * l.qty, 0));
   lines.push(...giftLines(lines, await activeGifts(env)));
-  let discount = 0, code = null, codeNote = null;
-  if (b.code) {
-    const d = await env.DB.prepare("SELECT * FROM discounts WHERE code=? AND active=1").bind(str(b.code, 40).toUpperCase()).first();
-    if (d && subtotal >= (d.min_spend || 0)) { discount = r2(subtotal * d.percent / 100); code = d.code; }
-    else if (d) codeNote = `Add $${(d.min_spend - subtotal).toFixed(2)} more to use ${d.code}`;
-  }
+  // Vouchers: one discount voucher (percent / amount) + one shipping voucher
+  const wanted = [...new Set([b.code, b.shipCode, ...(Array.isArray(b.codes) ? b.codes : [])].map((c) => str(c, 40).toUpperCase()).filter(Boolean))].slice(0, 4);
+  const vs = wanted.length ? (await env.DB.prepare(`SELECT * FROM discounts WHERE code IN (${wanted.map(() => "?").join(",")})`).bind(...wanted).all()).results : [];
+  const email = str(b.email, 200).toLowerCase();
+  const hasOrdered = email ? !!(await env.DB.prepare("SELECT 1 FROM orders WHERE email=? AND status NOT IN ('pending','cancelled') LIMIT 1").bind(email).first()) : null;
+  const notes = [];
+  for (const c of wanted) if (!vs.some((v) => v.code === c)) notes.push(`${c}: this code isn't valid`);
+  let discount = 0, code = null, shipDiscount = 0, shipCode = null;
+  const dv = vs.find((v) => v.type !== "shipping");
+  if (dv) { const r = evaluate(dv, { subtotal, shipping: 0, hasOrdered }); if (r.ok) { discount = r.amount; code = dv.code; } else notes.push(`${dv.code}: ${r.reason}`); }
   const country = str(b.country, 2).toUpperCase() || "US";
   const shipping = shippingFor(country, subtotal - discount);
-  return { lines, subtotal, discount, code, codeNote, shipping, country, total: r2(subtotal - discount + shipping), cost_total: r2(lines.reduce((s, l) => s + l.cost * l.qty, 0)) };
+  const sv = vs.find((v) => v.type === "shipping");
+  if (sv) { const r = evaluate(sv, { subtotal, shipping, hasOrdered }); if (r.ok) { shipDiscount = r.amount; shipCode = sv.code; } else notes.push(`${sv.code}: ${r.reason}`); }
+  return { lines, subtotal, discount, code, shipDiscount, shipCode, codeNote: notes.join(" · ") || null, shipping, country,
+    total: r2(subtotal - discount + shipping - shipDiscount), cost_total: r2(lines.reduce((s, l) => s + l.cost * l.qty, 0)) };
 }
 
 async function fulfil(env, orderId) {
@@ -121,6 +129,7 @@ async function syncProducts(env, limit = 20) {
     }
   }
   await setSetting(env, "last_sync", JSON.stringify({ at: new Date().toISOString(), ok, errors: errors.slice(0, 10) }));
+  await bustCache(env);
   return { ok, errors };
 }
 async function syncTracking(env) {
@@ -140,7 +149,26 @@ async function syncTracking(env) {
 }
 
 /* ---------------- router ---------------- */
+// Busy public lists are cached at Cloudflare's edge for 60s, so a page view doesn't re-read ~2,000 products
+// from D1 each time. Any admin change bumps a version number, so edits still show up right away.
+const CACHED = new Set(["/api/products", "/api/collections", "/api/promos"]);
 async function handle(req, env, ctx) {
+  const url = new URL(req.url);
+  if (req.method !== "GET" || !CACHED.has(url.pathname) || typeof caches === "undefined") return handleRoutes(req, env, ctx);
+  let v = "0";
+  try { v = (await env.DB.prepare("SELECT value FROM settings WHERE key='cache_v'").first())?.value || "0"; } catch {}
+  const key = new Request(`${url.origin}${url.pathname}?cv=${v}&${url.searchParams}`);
+  const hit = await caches.default.match(key);
+  if (hit) return hit;
+  const res = await handleRoutes(req, env, ctx);
+  if (res.status !== 200) return res;
+  const out = new Response(res.body, res);
+  out.headers.set("cache-control", "public, max-age=60");
+  ctx.waitUntil(caches.default.put(key, out.clone()));
+  return out;
+}
+const bustCache = (env) => setSetting(env, "cache_v", String(Date.now())).catch(() => {});
+async function handleRoutes(req, env, ctx) {
   const url = new URL(req.url), path = url.pathname, m = req.method;
   let p;
 
@@ -161,7 +189,8 @@ async function handle(req, env, ctx) {
   }
   if (path === "/api/promos") {
     const [promos, sched, vouchers, gifts] = await Promise.all([activePromos(env), schedules(env),
-      env.DB.prepare("SELECT code, percent, min_spend FROM discounts WHERE active=1 AND show=1 ORDER BY percent DESC").all().then((r) => r.results), activeGifts(env)]);
+      env.DB.prepare(`SELECT ${PUBLIC_FIELDS} FROM discounts WHERE active=1 AND show=1 AND (ends_at IS NULL OR ends_at > datetime('now')) AND (max_uses=0 OR max_uses IS NULL OR uses < max_uses) ORDER BY type='shipping' DESC, percent DESC, amount DESC`).all()
+        .then((r) => r.results.map((v) => ({ ...v, title: voucherTitle(v) }))), activeGifts(env)]);
     return json({ promos: promos.map((x) => ({ id: x.id, label: x.label, percent: x.percent, scope: x.scope, target: x.scope === "products" ? x.targets : x.target, endsAt: x.endsAt, recurring: !!x.recur })),
       schedules: sched, vouchers, gifts: publicGifts(gifts) });
   }
@@ -229,11 +258,15 @@ async function handle(req, env, ctx) {
     return json({ ok: true });
   }
   if (path === "/api/discount" && m === "POST") {
-    const d = await env.DB.prepare("SELECT code, percent, min_spend FROM discounts WHERE code=? AND active=1").bind(str((await body(req)).code, 40).toUpperCase()).first();
-    return d ? json(d) : bad("That code isn't valid", 404);
+    const d = await env.DB.prepare(`SELECT ${PUBLIC_FIELDS}, active, uses, max_uses FROM discounts WHERE code=?`).bind(str((await body(req)).code, 40).toUpperCase()).first();
+    if (!d || !d.active) return bad("That code isn't valid", 404);
+    const r = evaluate(d, { subtotal: 1e9, shipping: 1, hasOrdered: null });
+    if (!r.ok && !r.short) return bad(r.reason, 400);
+    const { active, uses, max_uses, ...pub } = d;
+    return json({ ...pub, title: voucherTitle(d) });
   }
   if (path === "/api/quote" && m === "POST") {
-    try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, codeNote: o.codeNote, shipping: o.shipping, total: o.total,
+    try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, shipDiscount: o.shipDiscount, shipCode: o.shipCode, codeNote: o.codeNote, shipping: o.shipping, total: o.total,
       gifts: o.lines.filter((l) => l.gift).map((l) => ({ id: l.id, title: l.title, variant: l.variant, qty: l.qty, value: l.giftValue, label: l.giftLabel })) }); }
     catch (e) { return bad(e.message); }
   }
@@ -251,12 +284,12 @@ async function handle(req, env, ctx) {
     try { o = await buildOrder(env, b); } catch (e) { return bad(e.message); }
     address.countryName = COUNTRY_NAMES[o.country] || o.country;
     const id = newOrderId();
-    const order = { id, items: o.lines, total: o.total, shipping: o.shipping, discount: o.discount };
+    const order = { id, items: o.lines, total: o.total, shipping: o.shipping, discount: o.discount, shipDiscount: o.shipDiscount };
     let paypalId;
     try { paypalId = await createPaypalOrder(env, order); } catch (e) { return bad(e.message, 502); }
-    await env.DB.prepare(`INSERT INTO orders (id,email,name,phone,address,country,items,subtotal,discount,discount_code,shipping,total,cost_total,paypal_order_id,status,marketing)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)`).bind(id, email, name, str(a.phone, 30), JSON.stringify(address), o.country, JSON.stringify(o.lines),
-      o.subtotal, o.discount, o.code, o.shipping, o.total, o.cost_total, paypalId, b.marketing ? 1 : 0).run();
+    await env.DB.prepare(`INSERT INTO orders (id,email,name,phone,address,country,items,subtotal,discount,discount_code,shipping,total,cost_total,paypal_order_id,status,marketing,ship_code,ship_discount)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?)`).bind(id, email, name, str(a.phone, 30), JSON.stringify(address), o.country, JSON.stringify(o.lines),
+      o.subtotal, o.discount, o.code, o.shipping, o.total, o.cost_total, paypalId, b.marketing ? 1 : 0, o.shipCode, o.shipDiscount || 0).run();
     return json({ orderId: id, paypalOrderId: paypalId });
   }
 
@@ -270,7 +303,7 @@ async function handle(req, env, ctx) {
     try { cap = await capturePaypalOrder(env, o.paypal_order_id); } catch (e) { return bad(e.message, 402); }
     if (cap.status !== "COMPLETED" || Math.abs(cap.amount - o.total) > 0.01 || cap.currency !== "USD") return bad("Payment was not completed", 402);
     await env.DB.prepare("UPDATE orders SET status='paid', paypal_capture_id=?, paid_at=datetime('now') WHERE id=? AND status='pending'").bind(cap.captureId, o.id).run();
-    if (o.discount_code) await env.DB.prepare("UPDATE discounts SET uses=uses+1 WHERE code=?").bind(o.discount_code).run();
+    for (const c of [o.discount_code, o.ship_code].filter(Boolean)) await env.DB.prepare("UPDATE discounts SET uses=uses+1 WHERE code=?").bind(c).run();
     const items = parse(o.items, []);
     await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.gift ? 0 : l.qty, l.id)));
     ctx.waitUntil(fulfil(env, o.id).catch(() => {}));
@@ -298,7 +331,9 @@ async function handle(req, env, ctx) {
   if (path === "/api/admin/logout") return json({ ok: true }, 200, { "set-cookie": "lm_admin=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict" });
   if (path.startsWith("/api/admin/")) {
     if (!(await isAdmin(req, env))) return bad("Not signed in", 401);
-    return admin(req, env, ctx, path, m, url);
+    const res = await admin(req, env, ctx, path, m, url);
+    if (m !== "GET" && res.status < 400) ctx.waitUntil(bustCache(env));
+    return res;
   }
   return bad("Not found", 404);
 }
@@ -549,10 +584,18 @@ async function admin(req, env, ctx, path, m, url) {
   }
   if (path === "/api/admin/discounts" && m === "GET") return json((await env.DB.prepare("SELECT * FROM discounts ORDER BY code").all()).results);
   if (path === "/api/admin/discounts" && m === "POST") {
-    const b = await body(req), code = str(b.code, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, ""), pct = Number(b.percent);
-    if (!code || !(pct > 0 && pct <= 90)) return bad("Code and a percent between 1 and 90 are required");
-    const minSpend = Math.max(0, Number(b.minSpend) || 0), show = b.show ? 1 : 0;
-    await env.DB.prepare("INSERT INTO discounts (code,percent,active,min_spend,show) VALUES (?,?,1,?,?) ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, min_spend=excluded.min_spend, show=excluded.show, active=1").bind(code, pct, minSpend, show).run();
+    const b = await body(req), code = str(b.code, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+    const type = ["percent", "amount", "shipping"].includes(b.type) ? b.type : "percent";
+    const pct = Number(b.percent) || 0, amount = Math.max(0, Number(b.amount) || 0), maxOff = Math.max(0, Number(b.maxOff) || 0);
+    if (!code) return bad("Enter a voucher code");
+    if (type === "percent" && !(pct > 0 && pct <= 90)) return bad("Percent must be between 1 and 90");
+    if (type === "amount" && !(amount > 0)) return bad("Enter how many dollars off");
+    const ends = b.endsAt ? new Date(b.endsAt).toISOString().slice(0, 19).replace("T", " ") : null;
+    await env.DB.prepare(`INSERT INTO discounts (code, type, percent, amount, max_off, min_spend, show, ends_at, label, first_order, max_uses, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+      ON CONFLICT(code) DO UPDATE SET type=excluded.type, percent=excluded.percent, amount=excluded.amount, max_off=excluded.max_off, min_spend=excluded.min_spend, show=excluded.show,
+      ends_at=excluded.ends_at, label=excluded.label, first_order=excluded.first_order, max_uses=excluded.max_uses, active=1`)
+      .bind(code, type, type === "percent" ? pct : 0, type === "percent" ? 0 : amount, type === "percent" ? maxOff : 0, Math.max(0, Number(b.minSpend) || 0), b.show ? 1 : 0, ends,
+        str(b.label, 60) || null, b.firstOrder ? 1 : 0, Math.max(0, parseInt(b.maxUses) || 0)).run();
     return json({ ok: true });
   }
   if ((p = path.match(/^\/api\/admin\/discounts\/([\w-]+)$/)) && m === "PATCH") {

@@ -44,7 +44,10 @@ export function ensureSchema(env) {
     await migrateToGeneralStore(env);
     for (const sql of ["ALTER TABLE collections ADD COLUMN cover TEXT", "ALTER TABLE products ADD COLUMN sold INTEGER DEFAULT 0",
       "ALTER TABLE discounts ADD COLUMN min_spend REAL DEFAULT 0", "ALTER TABLE discounts ADD COLUMN show INTEGER DEFAULT 0",
-      "ALTER TABLE promos ADD COLUMN recur INTEGER DEFAULT 0", "ALTER TABLE products ADD COLUMN video TEXT", "ALTER TABLE promos ADD COLUMN days TEXT", "ALTER TABLE promos ADD COLUMN start_hour INTEGER DEFAULT 0",
+      "ALTER TABLE promos ADD COLUMN recur INTEGER DEFAULT 0", "ALTER TABLE products ADD COLUMN video TEXT",
+      "ALTER TABLE discounts ADD COLUMN type TEXT DEFAULT 'percent'", "ALTER TABLE discounts ADD COLUMN amount REAL DEFAULT 0", "ALTER TABLE discounts ADD COLUMN max_off REAL DEFAULT 0",
+      "ALTER TABLE discounts ADD COLUMN ends_at TEXT", "ALTER TABLE discounts ADD COLUMN label TEXT", "ALTER TABLE discounts ADD COLUMN first_order INTEGER DEFAULT 0", "ALTER TABLE discounts ADD COLUMN max_uses INTEGER DEFAULT 0",
+      "ALTER TABLE orders ADD COLUMN ship_code TEXT", "ALTER TABLE orders ADD COLUMN ship_discount REAL DEFAULT 0", "ALTER TABLE promos ADD COLUMN days TEXT", "ALTER TABLE promos ADD COLUMN start_hour INTEGER DEFAULT 0",
       "ALTER TABLE promos ADD COLUMN end_hour INTEGER DEFAULT 24", "ALTER TABLE promos ADD COLUMN tz TEXT DEFAULT 'America/New_York'"])
       try { await env.DB.prepare(sql).run(); } catch {} // column already exists
   })().catch((e) => { ready = null; throw e; });

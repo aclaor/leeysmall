@@ -93,7 +93,7 @@ function orderModal(o) {
     <div class="form-grid" style="margin-top:16px"><div><b>Customer</b><p style="margin:6px 0">${esc(o.name)}<br>${esc(o.email)}<br>${esc(o.phone || "")}</p></div>
       <div><b>Ship to</b><p style="margin:6px 0">${esc(a.address1)} ${esc(a.address2 || "")}<br>${esc(a.city)}, ${esc(a.province || "")} ${esc(a.zip)}<br>${esc(a.countryName || o.country)}</p></div></div>
     <table style="margin:10px 0"><tr><th>Item</th><th>Supplier</th><th>Qty</th><th>Price</th><th>Cost</th></tr>${o.items.map((l) => `<tr><td>${l.gift ? "🎁 <b style='color:#ffd38a'>FREE GIFT</b> · " : ""}${esc(l.title)}<div class="muted" style="font-size:12px">${esc(l.variant || "")}</div></td><td>${SUPPLIER[l.supplier] || esc(l.supplier)}</td><td>${l.qty}</td><td>${money(l.price)}</td><td>${money(l.cost)}</td></tr>`).join("")}</table>
-    <div class="row-between"><span>Subtotal ${money(o.subtotal)} · Discount −${money(o.discount)} · Shipping ${money(o.shipping)}</span><b>Total ${money(o.total)}</b></div>
+    <div class="row-between"><span>Subtotal ${money(o.subtotal)} · Voucher −${money(o.discount)}${o.discount_code ? " (" + esc(o.discount_code) + ")" : ""} · Shipping ${money(o.shipping)}${o.ship_discount ? ` −${money(o.ship_discount)} (${esc(o.ship_code)})` : ""}</span><b>Total ${money(o.total)}</b></div>
     <div class="row-between" style="margin-top:4px"><span class="muted">Supplier cost ${money(o.cost_total)}</span><b style="color:var(--good)">Profit ${money(o.total - o.cost_total)}</b></div>
     <div class="muted" style="font-size:13px;margin-top:6px">Supplier orders: ${Object.entries(o.supplier_order_ids || {}).map(([k, v]) => esc(k + ": " + v)).join(", ") || "none yet"}</div>
     <form id="of" class="form-grid" style="margin-top:18px">
@@ -526,17 +526,37 @@ async function bulkImport() {
 /* ---------- Discounts ---------- */
 async function discounts() {
   const list = await api("/api/admin/discounts");
-  main().innerHTML = `<h1>Vouchers</h1><p class="muted" style="margin-top:-8px">Codes customers enter at checkout. Tick <b>Show on store</b> to display a voucher as a “Claim” coupon on the homepage, category pages and product pages — claimed vouchers apply automatically at checkout.</p>
-    <form class="panel flex" id="df" style="flex-wrap:wrap;gap:10px"><input class="inp" name="code" placeholder="CODE e.g. SAVE10" style="max-width:180px;text-transform:uppercase" required>
-    <input class="inp" name="percent" type="number" min="1" max="90" placeholder="% off" style="max-width:100px" required>
-    <input class="inp" name="minSpend" type="number" min="0" step="0.01" placeholder="Min. spend $ (optional)" style="max-width:190px">
-    <label class="flex" style="gap:6px;font-size:14px;color:var(--ink-2)"><input type="checkbox" name="show" checked> Show on store</label><button class="btn accent">Save voucher</button></form>
-    <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Code</th><th>Discount</th><th>Min. spend</th><th>Used</th><th>On store</th><th>Status</th><th></th></tr>
-    ${list.map((d) => `<tr><td><b>${esc(d.code)}</b></td><td>${d.percent}% off</td><td>${d.min_spend ? money(d.min_spend) : "—"}</td><td>${d.uses}</td>
+  const title = (d) => d.type === "shipping" ? (d.amount ? `Free shipping up to ${money(d.amount)}` : "Free shipping") : d.type === "amount" ? `${money(d.amount)} off` : `${d.percent}% off${d.max_off ? `, max ${money(d.max_off)}` : ""}`;
+  const typeTag = { percent: '<span class="st processing">% off</span>', amount: '<span class="st paid">$ off</span>', shipping: '<span class="st delivered">Free shipping</span>' };
+  main().innerHTML = `<h1>Vouchers</h1><p class="muted" style="margin-top:-8px">Like Shopee: customers pick vouchers at checkout — <b>one shipping voucher + one discount voucher</b> per order. The best available ones are applied automatically. Tick <b>Show on store</b> to display a voucher as a claimable coupon.</p>
+    <form class="panel" id="df"><div class="form-grid">
+      <label class="full">Voucher type<div class="chips">${[["percent", "% off"], ["amount", "$ off"], ["shipping", "🚚 Free shipping"]].map(([v, t], i) => `<label class="chip ${i ? "" : "on"}" data-vt="${v}"><input type="radio" name="type" value="${v}" ${i ? "" : "checked"} hidden>${t}</label>`).join("")}</div></label>
+      <label>Code<input class="inp" name="code" placeholder="e.g. SAVE10, FREESHIP" style="text-transform:uppercase" required></label>
+      <label data-for="percent">Percent off<input class="inp" name="percent" type="number" min="1" max="90" placeholder="10"></label>
+      <label data-for="amount" hidden>Dollars off<input class="inp" name="amount" type="number" min="0.5" step="0.01" placeholder="5.00"></label>
+      <label data-for="shipping" hidden>Covers shipping up to $ (blank = all of it)<input class="inp" name="shipCap" type="number" min="0" step="0.01" placeholder="e.g. 5.00"></label>
+      <label data-for="percent">Max discount $ (optional)<input class="inp" name="maxOff" type="number" min="0" step="0.01" placeholder="e.g. 15.00"></label>
+      <label>Min. spend $ (optional)<input class="inp" name="minSpend" type="number" min="0" step="0.01" placeholder="0"></label>
+      <label>Valid until (optional)<input class="inp" name="ends" type="date"></label>
+      <label>Total uses allowed (optional)<input class="inp" name="maxUses" type="number" min="0" placeholder="unlimited"></label>
+      <label>Name shown to shoppers (optional)<input class="inp" name="label" maxlength="60" placeholder="e.g. Welcome Gift"></label>
+      <div class="full flex" style="gap:18px;flex-wrap:wrap"><label class="flex" style="gap:6px"><input type="checkbox" name="show" checked> Show on store</label>
+        <label class="flex" style="gap:6px"><input type="checkbox" name="firstOrder"> First order only</label></div>
+      <div class="full"><button class="btn accent">Save voucher</button></div></div></form>
+    <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Code</th><th>Type</th><th>Gives</th><th>Min. spend</th><th>Valid till</th><th>Used</th><th>On store</th><th></th></tr>
+    ${list.map((d) => `<tr><td><b>${esc(d.code)}</b>${d.label ? `<div class="muted" style="font-size:12px">${esc(d.label)}</div>` : ""}${d.first_order ? `<div class="muted" style="font-size:12px">First order only</div>` : ""}</td>
+      <td>${typeTag[d.type || "percent"]}</td><td>${title(d)}</td><td>${d.min_spend ? money(d.min_spend) : "—"}</td><td>${d.ends_at ? date(d.ends_at) : "—"}</td>
+      <td>${d.uses}${d.max_uses ? " / " + d.max_uses : ""}</td>
       <td><button class="st ${d.show ? "delivered" : ""}" data-show="${esc(d.code)}" data-v="${d.show ? 0 : 1}" style="cursor:pointer">${d.show ? "Shown" : "Hidden"}</button></td>
-      <td>${d.active ? "Active" : "Disabled"}</td><td><button class="btn sm ghost" data-d="${esc(d.code)}" data-a="${d.active ? 0 : 1}">${d.active ? "Disable" : "Enable"}</button></td></tr>`).join("")}</table></div>`;
-  $("#df").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
-    try { await api("/api/admin/discounts", "POST", { code: f.code.value, percent: f.percent.value, minSpend: f.minSpend.value, show: f.show.checked }); toast("Voucher saved"); discounts(); } catch (er) { toast(er.message); } };
+      <td><button class="btn sm ghost" data-d="${esc(d.code)}" data-a="${d.active ? 0 : 1}">${d.active ? "Disable" : "Enable"}</button></td></tr>`).join("")}</table></div>`;
+  const f = $("#df");
+  const setType = (t) => { f.querySelectorAll("[data-vt]").forEach((c) => c.classList.toggle("on", c.dataset.vt === t)); f.querySelectorAll("[data-for]").forEach((el) => (el.hidden = el.dataset.for !== t)); };
+  f.querySelectorAll("[data-vt]").forEach((c) => (c.onclick = () => { c.querySelector("input").checked = true; setType(c.dataset.vt); }));
+  f.onsubmit = async (e) => { e.preventDefault();
+    const type = f.type.value;
+    try { await api("/api/admin/discounts", "POST", { code: f.code.value, type, percent: f.percent.value, amount: type === "shipping" ? f.shipCap.value : f.amount.value, maxOff: f.maxOff.value,
+      minSpend: f.minSpend.value, endsAt: f.ends.value ? new Date(f.ends.value + "T23:59:59").toISOString() : null, maxUses: f.maxUses.value, label: f.label.value, show: f.show.checked, firstOrder: f.firstOrder.checked });
+      toast("Voucher saved"); discounts(); } catch (er) { toast(er.message); } };
   main().querySelectorAll("[data-d]").forEach((b) => (b.onclick = async () => { await api("/api/admin/discounts/" + b.dataset.d, "PATCH", { active: b.dataset.a === "1" }); discounts(); }));
   main().querySelectorAll("[data-show]").forEach((b) => (b.onclick = async () => { await api("/api/admin/discounts/" + b.dataset.show, "PATCH", { show: b.dataset.v === "1" }); discounts(); }));
 }
