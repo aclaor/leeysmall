@@ -435,7 +435,14 @@ function product(id) {
   let img = 0, qty = 1, country = "US";
   const off = offPct(p);
   country = shopCountry();
-  const related = PRODUCTS.filter((x) => x.collection === p.collection && x.id !== p.id).concat(PRODUCTS.filter((x) => x.collection !== p.collection)).slice(0, 4);
+  // Most similar first: shared words in the name, same category, then best sellers
+  const STOP = new Set(["for", "and", "with", "the", "new", "men", "women", "mens", "womens", "a", "of", "in", "to", "set", "pcs", "style"]);
+  const words = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)));
+  const mine = words(p.title);
+  const related = PRODUCTS.filter((x) => x.id !== p.id && x.stock > 0)
+    .map((x) => { let s = 0; for (const w of words(x.title)) if (mine.has(w)) s += 3; if (x.collection === p.collection) s += 4; return [x, s + Math.min(2, (x.sold || 0) / 50)]; })
+    .sort((a, b) => b[1] - a[1]).map(([x]) => x).slice(0, 48);
+  let shown = 12;
   const coll = COLLECTIONS.find((c) => c.id === p.collection) || { id: "all", name: "All products" };
   const stockTxt = p.stock === 0 ? `<div class="stock none">Sold out</div>` : p.stock < 60 ? `<div class="stock low">Only ${p.stock} left — order soon</div>` : `<div class="stock">In stock, ready to ship</div>`;
   app.innerHTML = `<div class="wrap"><div class="pdp">
@@ -462,8 +469,11 @@ function product(id) {
       <details class="acc"><summary>Shipping</summary><p>US orders ship from our US warehouses where available (3–7 business days). International orders ship worldwide in 7–20 business days with tracking. Free US shipping over $${FREE_SHIP}.</p></details>
       <details class="acc"><summary>Returns</summary><p>Not happy? Return it within 30 days of delivery for a full refund. Damaged or faulty items are replaced free.</p></details>
     </div></div>
-    <section class="section" style="padding-top:0"><div class="section-head"><h2>You may also like</h2></div><div class="grid">${related.map(card).join("")}</div></section></div>`;
+    <section class="section" style="padding-top:0"><div class="section-head"><h2>You may also like</h2></div><div class="grid" id="related">${related.slice(0, shown).map(card).join("")}</div>
+      ${related.length > shown ? `<div style="text-align:center;margin-top:26px"><button class="btn ghost" id="moreRelated">Show more</button></div>` : ""}</section></div>`;
   const variantStr = () => Object.values(sel).join(" / ");
+  const more = $("#moreRelated");
+  if (more) more.onclick = () => { $("#related").insertAdjacentHTML("beforeend", related.slice(shown, shown + 12).map(card).join("")); shown += 12; if (shown >= related.length) more.remove(); };
   app.querySelectorAll("[data-opt]").forEach((b) => (b.onclick = () => {
     sel[b.dataset.opt] = b.dataset.val;
     app.querySelectorAll(`[data-opt="${CSS.escape(b.dataset.opt)}"]`).forEach((x) => x.classList.toggle("on", x === b));
