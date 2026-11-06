@@ -90,7 +90,7 @@ function renderDrawer() {
   const d = $("#drawer"), lines = cart.lines(), sub = cart.subtotal();
   d.innerHTML = `<div class="drawer-head"><h3>Your cart (${cart.count()})</h3><button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
   ${lines.length ? shipProgress(sub) + `<div class="drawer-items">${lines.map((l) => `
-    <div class="line"><a class="thumb" href="/products/${l.id}" data-link>${art(l.p)}</a>
+    <div class="line"><a class="thumb" href="/products/${l.id}" data-link>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</a>
       <div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div>
       <b>${money(l.p.price * l.qty)}</b></div>`).join("")}${giftRows(cartGifts(lines))}</div>
     <div class="drawer-foot"><div class="row-between"><span>Subtotal</span><b>${money(sub)}</b></div><small class="muted">Taxes and shipping calculated at checkout.</small>
@@ -135,6 +135,17 @@ function timeLeft(iso) {
 }
 setInterval(() => document.querySelectorAll("[data-ends]").forEach((el) => (el.textContent = timeLeft(el.dataset.ends))), 1000);
 const bestVoucher = () => PROMO.vouchers[0] || null;
+// Photo for a chosen option, e.g. "Black" or "Black / XL" (CJ sends one per option)
+const variantImg = (p, variant) => {
+  const vi = p.variantImages || {};
+  if (!variant) return null;
+  if (vi[variant]) return vi[variant];
+  const parts = String(variant).split(" / ");
+  const k = Object.keys(vi).find((key) => parts.every((x) => key.toLowerCase().includes(x.toLowerCase())));
+  return k ? vi[k] : null;
+};
+const optionImg = (p, value) => { const vi = p.variantImages || {}; if (vi[value]) return vi[value]; const k = Object.keys(vi).find((key) => key.split(/[-/ ]+/).some((w) => w.toLowerCase() === String(value).toLowerCase())); return k ? vi[k] : null; };
+const photoTag = (src, alt) => `<div class="art photo"><img src="${esc(src)}" alt="${esc(alt)}"></div>`;
 const videoTag = (p, controls) => `<video class="pvideo" src="${esc(p.video)}" ${controls ? "controls" : ""} autoplay muted playsinline loop preload="metadata" ${p.images?.[0] ? `poster="${esc(p.images[0])}"` : ""}></video>`;
 const offPct = (p) => (p.compareAt && p.compareAt > p.price ? Math.round((1 - p.price / p.compareAt) * 100) : 0);
 
@@ -439,7 +450,8 @@ function product(id) {
         <span>${esc(g.gift.title)}${g.gift.variant ? " (" + esc(g.gift.variant) + ")" : ""}${g.gift.value ? ` — worth ${money(g.gift.value)}` : ""}</span><small>Added to your order automatically${g.perItem ? " — one per item you buy" : ""}.</small></div></div>` : ""; })()}
       ${p.price >= FREE_SHIP ? `<div class="perk">✓ Free US shipping on this item</div>` : `<div class="perk">Free US shipping on orders over ${money(FREE_SHIP)}</div>`}
       ${stockTxt}
-      ${p.variants.map((v) => `<div class="opt"><div class="opt-label">${esc(v.name)}: <span data-sel="${esc(v.name)}">${esc(sel[v.name])}</span></div><div class="opt-values">${v.options.map((o) => `<button data-opt="${esc(v.name)}" data-val="${esc(o)}" class="${o === sel[v.name] ? "on" : ""}">${esc(o)}</button>`).join("")}</div></div>`).join("")}
+      ${p.variants.map((v) => `<div class="opt"><div class="opt-label">${esc(v.name)}: <span data-sel="${esc(v.name)}">${esc(sel[v.name])}</span></div><div class="opt-values">${v.options.map((o) => { const im = optionImg(p, o);
+        return `<button data-opt="${esc(v.name)}" data-val="${esc(o)}" class="${o === sel[v.name] ? "on" : ""} ${im ? "swatch" : ""}">${im ? `<img src="${esc(im)}" alt="" loading="lazy">` : ""}<span>${esc(o)}</span></button>`; }).join("")}</div></div>`).join("")}
       <div class="opt"><div class="opt-label">Quantity</div><div class="qty"><button id="qMinus">−</button><input id="qVal" value="1" readonly><button id="qPlus">+</button></div></div>
       <div class="buy-row"><button class="btn ghost" id="addBtn" ${p.stock === 0 ? "disabled" : ""}>Add to cart</button><button class="btn accent" id="buyBtn" ${p.stock === 0 ? "disabled" : ""}>Buy it now</button></div>
       <div class="ship-box">
@@ -456,6 +468,11 @@ function product(id) {
     sel[b.dataset.opt] = b.dataset.val;
     app.querySelectorAll(`[data-opt="${CSS.escape(b.dataset.opt)}"]`).forEach((x) => x.classList.toggle("on", x === b));
     app.querySelector(`[data-sel="${CSS.escape(b.dataset.opt)}"]`).textContent = b.dataset.val;
+    const im = variantImg(p, Object.values(sel).join(" / ")) || optionImg(p, b.dataset.val);
+    if (im) {
+      $("#mainImg").innerHTML = photoTag(im, p.title + " — " + b.dataset.val);
+      app.querySelectorAll("[data-img], [data-video]").forEach((x) => x.classList.remove("on"));
+    }
   }));
   app.querySelectorAll("[data-img]").forEach((b) => (b.onclick = () => {
     img = Number(b.dataset.img); $("#mainImg").innerHTML = art(p, img);
@@ -475,7 +492,7 @@ function cartPage() {
   document.title = "Cart — LeeysPremium";
   const lines = cart.lines(), sub = cart.subtotal();
   app.innerHTML = `<div class="wrap prose" style="max-width:900px"><h1>Your cart</h1>${lines.length ? `
-    ${shipProgress(sub)}${lines.map((l) => `<div class="line"><a class="thumb" href="/products/${l.id}" data-link>${art(l.p)}</a><div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
+    ${shipProgress(sub)}${lines.map((l) => `<div class="line"><a class="thumb" href="/products/${l.id}" data-link>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</a><div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
     ${giftRows(cartGifts(lines))}    <div class="row-between" style="margin:24px 0 8px;font-size:18px"><span>Subtotal</span><b>${money(sub)}</b></div><p class="muted">Taxes and shipping calculated at checkout.</p>
     <a class="btn accent" href="/checkout" data-link>Checkout</a>`
   : `<div class="empty"><p>Your cart is empty.</p><a class="btn" href="/collections/all" data-link>Start shopping</a></div>`}</div>`;
@@ -516,7 +533,7 @@ function checkout() {
       <h2>Payment</h2><p class="muted" style="margin-top:-6px;font-size:14px">Pay securely with PayPal or any debit/credit card. All transactions are encrypted.</p>
       <div id="coError" class="note err" hidden></div>
       <div id="paypal-buttons" style="margin-top:14px;min-height:50px"></div></form>
-    <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
+    <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
       <div class="discount"><input id="code" placeholder="Voucher or discount code" value="${esc(code)}"><button type="button" class="btn" id="applyCode">Apply</button></div>
       <div class="totals" id="totals"></div></div></div></div>`;
   const form = $("#coForm"), err = (m) => { const e = $("#coError"); e.textContent = m || ""; e.hidden = !m; };

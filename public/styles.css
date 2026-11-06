@@ -373,6 +373,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--blue); }
 .opt-values { display: flex; gap: 8px; flex-wrap: wrap; }
 .opt-values button { border: 1px solid var(--line-2); background: rgba(255,255,255,.04); border-radius: 12px; padding: 9px 16px; font-weight: 500; transition: .2s; }
 .opt-values button:hover { border-color: rgba(92,178,255,.5); }
+.opt-values button.swatch { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; }
+.opt-values button.swatch img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: #fff; flex: none; }
 .opt-values button.on { border-color: var(--blue); background: rgba(47,140,255,.18); color: #fff; box-shadow: 0 0 14px rgba(47,140,255,.35); }
 .qty { display: inline-flex; border: 1px solid var(--line-2); border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.04); }
 .qty button { background: none; border: 0; width: 40px; height: 46px; font-size: 18px; color: var(--ink); }
