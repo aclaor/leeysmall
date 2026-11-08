@@ -525,12 +525,19 @@ async function bulkImport() {
 
 /* ---------- Discounts ---------- */
 async function discounts() {
-  const list = await api("/api/admin/discounts");
+  const [list, prods] = await Promise.all([api("/api/admin/discounts"), api("/api/admin/products")]);
+  const picked = new Set();
+  const scopeText = (d) => d.scope === "collection" ? (collections.find((c) => c.id === d.target)?.name || d.target) + " only"
+    : d.scope === "products" ? (() => { const ids = JSON.parse(d.target || "[]"); return ids.length <= 2 ? ids.map((id) => (prods.find((x) => x.id === id)?.title || id).slice(0, 34)).join(", ") : ids.length + " selected products"; })() : "Whole store";
   const title = (d) => d.type === "shipping" ? (d.amount ? `Free shipping up to ${money(d.amount)}` : "Free shipping") : d.type === "amount" ? `${money(d.amount)} off` : `${d.percent}% off${d.max_off ? `, max ${money(d.max_off)}` : ""}`;
   const typeTag = { percent: '<span class="st processing">% off</span>', amount: '<span class="st paid">$ off</span>', shipping: '<span class="st delivered">Free shipping</span>' };
   main().innerHTML = `<h1>Vouchers</h1><p class="muted" style="margin-top:-8px">Like Shopee: customers pick vouchers at checkout — <b>one shipping voucher + one discount voucher</b> per order. The best available ones are applied automatically. Tick <b>Show on store</b> to display a voucher as a claimable coupon.</p>
     <form class="panel" id="df"><div class="form-grid">
       <label class="full">Voucher type<div class="chips">${[["percent", "% off"], ["amount", "$ off"], ["shipping", "🚚 Free shipping"]].map(([v, t], i) => `<label class="chip ${i ? "" : "on"}" data-vt="${v}"><input type="radio" name="type" value="${v}" ${i ? "" : "checked"} hidden>${t}</label>`).join("")}</div></label>
+      <label class="full">Applies to<select class="inp" name="scope"><option value="all">Whole store</option><option value="products">Specific products…</option>${collections.map((c) => `<option value="c:${c.id}">Category: ${esc(c.name)}</option>`).join("")}</select>
+        <span class="muted" style="font-weight:400;font-size:12.5px">Only matching items are discounted and count toward the min. spend. A free-shipping voucher works when the cart has a matching item.</span></label>
+      <div class="full" id="vpk" hidden><div class="row-between"><b style="font-size:13px;color:var(--ink-2)">Choose products <span id="vpc" style="color:var(--blue-2)">(0)</span></b><button type="button" class="btn sm ghost" id="vpclr">Clear</button></div>
+        <input class="inp" id="vpq" placeholder="Search by product name…" style="margin:6px 0"><div id="vpl" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:6px"></div></div>
       <label>Code<input class="inp" name="code" placeholder="e.g. SAVE10, FREESHIP" style="text-transform:uppercase" required></label>
       <label data-for="percent">Percent off<input class="inp" name="percent" type="number" min="1" max="90" placeholder="10"></label>
       <label data-for="amount" hidden>Dollars off<input class="inp" name="amount" type="number" min="0.5" step="0.01" placeholder="5.00"></label>
@@ -543,18 +550,29 @@ async function discounts() {
       <div class="full flex" style="gap:18px;flex-wrap:wrap"><label class="flex" style="gap:6px"><input type="checkbox" name="show" checked> Show on store</label>
         <label class="flex" style="gap:6px"><input type="checkbox" name="firstOrder"> First order only</label></div>
       <div class="full"><button class="btn accent">Save voucher</button></div></div></form>
-    <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Code</th><th>Type</th><th>Gives</th><th>Min. spend</th><th>Valid till</th><th>Used</th><th>On store</th><th></th></tr>
+    <div class="panel tbl-wrap" style="padding:6px 10px"><table><tr><th>Code</th><th>Type</th><th>Gives</th><th>Applies to</th><th>Min. spend</th><th>Valid till</th><th>Used</th><th>On store</th><th></th></tr>
     ${list.map((d) => `<tr><td><b>${esc(d.code)}</b>${d.label ? `<div class="muted" style="font-size:12px">${esc(d.label)}</div>` : ""}${d.first_order ? `<div class="muted" style="font-size:12px">First order only</div>` : ""}</td>
-      <td>${typeTag[d.type || "percent"]}</td><td>${title(d)}</td><td>${d.min_spend ? money(d.min_spend) : "—"}</td><td>${d.ends_at ? date(d.ends_at) : "—"}</td>
+      <td>${typeTag[d.type || "percent"]}</td><td>${title(d)}</td><td style="font-size:13px">${esc(scopeText(d))}</td><td>${d.min_spend ? money(d.min_spend) : "—"}</td><td>${d.ends_at ? date(d.ends_at) : "—"}</td>
       <td>${d.uses}${d.max_uses ? " / " + d.max_uses : ""}</td>
       <td><button class="st ${d.show ? "delivered" : ""}" data-show="${esc(d.code)}" data-v="${d.show ? 0 : 1}" style="cursor:pointer">${d.show ? "Shown" : "Hidden"}</button></td>
       <td><button class="btn sm ghost" data-d="${esc(d.code)}" data-a="${d.active ? 0 : 1}">${d.active ? "Disable" : "Enable"}</button></td></tr>`).join("")}</table></div>`;
   const f = $("#df");
   const setType = (t) => { f.querySelectorAll("[data-vt]").forEach((c) => c.classList.toggle("on", c.dataset.vt === t)); f.querySelectorAll("[data-for]").forEach((el) => (el.hidden = el.dataset.for !== t)); };
   f.querySelectorAll("[data-vt]").forEach((c) => (c.onclick = () => { c.querySelector("input").checked = true; setType(c.dataset.vt); }));
+  const renderPk = () => {
+    const q = $("#vpq").value.toLowerCase();
+    $("#vpl").innerHTML = prods.filter((x) => x.active && (!q || x.title.toLowerCase().includes(q))).sort((a, b) => picked.has(b.id) - picked.has(a.id)).slice(0, 80)
+      .map((x) => `<label class="flex" style="padding:6px;gap:10px;cursor:pointer"><input type="checkbox" data-vp="${x.id}" ${picked.has(x.id) ? "checked" : ""}>${thumb(x)}<span>${esc(x.title.slice(0, 80))}</span><span class="muted" style="margin-left:auto">${money(x.price)}</span></label>`).join("") || `<p class="muted" style="padding:8px">No matches</p>`;
+    $("#vpl").querySelectorAll("[data-vp]").forEach((c) => (c.onchange = () => { c.checked ? picked.add(c.dataset.vp) : picked.delete(c.dataset.vp); $("#vpc").textContent = `(${picked.size})`; }));
+    $("#vpc").textContent = `(${picked.size})`;
+  };
+  f.scope.onchange = () => { $("#vpk").hidden = f.scope.value !== "products"; if (!$("#vpk").hidden) { renderPk(); $("#vpq").focus(); } };
+  $("#vpq").oninput = renderPk; $("#vpclr").onclick = () => { picked.clear(); renderPk(); };
   f.onsubmit = async (e) => { e.preventDefault();
-    const type = f.type.value;
-    try { await api("/api/admin/discounts", "POST", { code: f.code.value, type, percent: f.percent.value, amount: type === "shipping" ? f.shipCap.value : f.amount.value, maxOff: f.maxOff.value,
+    const type = f.type.value, sc = f.scope.value;
+    if (sc === "products" && !picked.size) return toast("Choose at least one product");
+    try { await api("/api/admin/discounts", "POST", { code: f.code.value, type, scope: sc === "all" ? "all" : sc === "products" ? "products" : "collection",
+      target: sc === "products" ? [...picked] : sc.startsWith("c:") ? sc.slice(2) : null, percent: f.percent.value, amount: type === "shipping" ? f.shipCap.value : f.amount.value, maxOff: f.maxOff.value,
       minSpend: f.minSpend.value, endsAt: f.ends.value ? new Date(f.ends.value + "T23:59:59").toISOString() : null, maxUses: f.maxUses.value, label: f.label.value, show: f.show.checked, firstOrder: f.firstOrder.checked });
       toast("Voucher saved"); discounts(); } catch (er) { toast(er.message); } };
   main().querySelectorAll("[data-d]").forEach((b) => (b.onclick = async () => { await api("/api/admin/discounts/" + b.dataset.d, "PATCH", { active: b.dataset.a === "1" }); discounts(); }));

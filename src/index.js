@@ -1,5 +1,5 @@
 import { classify } from "../public/classify.js";
-import { evaluate, voucherTitle, PUBLIC_FIELDS } from "./vouchers.js";
+import { evaluate, voucherTitle, eligibleSubtotal, PUBLIC_FIELDS } from "./vouchers.js";
 import { activeGifts, giftLines, publicGifts } from "./gifts.js";
 import { activePromos, priced, schedules, windowEnd, scheduleText } from "./promos.js";
 import { mediaReady, startUpload, uploadPart, completeUpload, deleteObject, serveMedia, embedUrl } from "./media.js";
@@ -78,11 +78,11 @@ async function buildOrder(env, b) {
   for (const c of wanted) if (!vs.some((v) => v.code === c)) notes.push(`${c}: this code isn't valid`);
   let discount = 0, code = null, shipDiscount = 0, shipCode = null;
   const dv = vs.find((v) => v.type !== "shipping");
-  if (dv) { const r = evaluate(dv, { subtotal, shipping: 0, hasOrdered }); if (r.ok) { discount = r.amount; code = dv.code; } else notes.push(`${dv.code}: ${r.reason}`); }
+  if (dv) { const r = evaluate(dv, { subtotal, eligible: eligibleSubtotal(dv, lines), shipping: 0, hasOrdered }); if (r.ok) { discount = r.amount; code = dv.code; } else notes.push(`${dv.code}: ${r.reason}`); }
   const country = str(b.country, 2).toUpperCase() || "US";
   const shipping = shippingFor(country, subtotal - discount);
   const sv = vs.find((v) => v.type === "shipping");
-  if (sv) { const r = evaluate(sv, { subtotal, shipping, hasOrdered }); if (r.ok) { shipDiscount = r.amount; shipCode = sv.code; } else notes.push(`${sv.code}: ${r.reason}`); }
+  if (sv) { const r = evaluate(sv, { subtotal, eligible: eligibleSubtotal(sv, lines), shipping, hasOrdered }); if (r.ok) { shipDiscount = r.amount; shipCode = sv.code; } else notes.push(`${sv.code}: ${r.reason}`); }
   return { lines, subtotal, discount, code, shipDiscount, shipCode, codeNote: notes.join(" · ") || null, shipping, country,
     total: r2(subtotal - discount + shipping - shipDiscount), cost_total: r2(lines.reduce((s, l) => s + l.cost * l.qty, 0)) };
 }
@@ -190,7 +190,7 @@ async function handleRoutes(req, env, ctx) {
   if (path === "/api/promos") {
     const [promos, sched, vouchers, gifts] = await Promise.all([activePromos(env), schedules(env),
       env.DB.prepare(`SELECT ${PUBLIC_FIELDS} FROM discounts WHERE active=1 AND show=1 AND (ends_at IS NULL OR ends_at > datetime('now')) AND (max_uses=0 OR max_uses IS NULL OR uses < max_uses) ORDER BY type='shipping' DESC, percent DESC, amount DESC`).all()
-        .then((r) => r.results.map((v) => ({ ...v, title: voucherTitle(v) }))), activeGifts(env)]);
+        .then((r) => r.results.map((v) => ({ ...v, scope: v.scope || "all", target: v.scope === "products" ? parse(v.target, []) : v.target, title: voucherTitle(v) }))), activeGifts(env)]);
     return json({ promos: promos.map((x) => ({ id: x.id, label: x.label, percent: x.percent, scope: x.scope, target: x.scope === "products" ? x.targets : x.target, endsAt: x.endsAt, recurring: !!x.recur })),
       schedules: sched, vouchers, gifts: publicGifts(gifts) });
   }
@@ -263,7 +263,7 @@ async function handleRoutes(req, env, ctx) {
     const r = evaluate(d, { subtotal: 1e9, shipping: 1, hasOrdered: null });
     if (!r.ok && !r.short) return bad(r.reason, 400);
     const { active, uses, max_uses, ...pub } = d;
-    return json({ ...pub, title: voucherTitle(d) });
+    return json({ ...pub, scope: d.scope || "all", target: d.scope === "products" ? parse(d.target, []) : d.target, title: voucherTitle(d) });
   }
   if (path === "/api/quote" && m === "POST") {
     try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, shipDiscount: o.shipDiscount, shipCode: o.shipCode, codeNote: o.codeNote, shipping: o.shipping, total: o.total,
@@ -591,11 +591,14 @@ async function admin(req, env, ctx, path, m, url) {
     if (type === "percent" && !(pct > 0 && pct <= 90)) return bad("Percent must be between 1 and 90");
     if (type === "amount" && !(amount > 0)) return bad("Enter how many dollars off");
     const ends = b.endsAt ? new Date(b.endsAt).toISOString().slice(0, 19).replace("T", " ") : null;
-    await env.DB.prepare(`INSERT INTO discounts (code, type, percent, amount, max_off, min_spend, show, ends_at, label, first_order, max_uses, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+    const scope = ["collection", "products"].includes(b.scope) ? b.scope : "all";
+    const target = scope === "collection" ? str(b.target, 40) : scope === "products" ? JSON.stringify((b.target || []).map((x) => str(x, 100)).slice(0, 2000)) : null;
+    if (scope !== "all" && (!target || target === "[]")) return bad("Choose the products or category this voucher applies to");
+    await env.DB.prepare(`INSERT INTO discounts (code, type, percent, amount, max_off, min_spend, show, ends_at, label, first_order, max_uses, scope, target, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
       ON CONFLICT(code) DO UPDATE SET type=excluded.type, percent=excluded.percent, amount=excluded.amount, max_off=excluded.max_off, min_spend=excluded.min_spend, show=excluded.show,
-      ends_at=excluded.ends_at, label=excluded.label, first_order=excluded.first_order, max_uses=excluded.max_uses, active=1`)
+      ends_at=excluded.ends_at, label=excluded.label, first_order=excluded.first_order, max_uses=excluded.max_uses, scope=excluded.scope, target=excluded.target, active=1`)
       .bind(code, type, type === "percent" ? pct : 0, type === "percent" ? 0 : amount, type === "percent" ? maxOff : 0, Math.max(0, Number(b.minSpend) || 0), b.show ? 1 : 0, ends,
-        str(b.label, 60) || null, b.firstOrder ? 1 : 0, Math.max(0, parseInt(b.maxUses) || 0)).run();
+        str(b.label, 60) || null, b.firstOrder ? 1 : 0, Math.max(0, parseInt(b.maxUses) || 0), scope, target).run();
     return json({ ok: true });
   }
   if ((p = path.match(/^\/api\/admin\/discounts\/([\w-]+)$/)) && m === "PATCH") {

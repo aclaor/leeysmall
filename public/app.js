@@ -134,7 +134,11 @@ function timeLeft(iso) {
   return s <= 0 ? "ended" : d ? `${d}d ${h}h ${pad(mi)}m` : `${pad(h)}:${pad(mi)}:${pad(se)}`;
 }
 setInterval(() => document.querySelectorAll("[data-ends]").forEach((el) => (el.textContent = timeLeft(el.dataset.ends))), 1000);
-const bestVoucher = () => PROMO.vouchers[0] || null;
+// Vouchers can cover the whole store, one category, or chosen products
+const vMatches = (v, p) => !v.scope || v.scope === "all" || (v.scope === "collection" ? p.collection === v.target : (v.target || []).includes(p.id));
+const vouchersFor = (p) => PROMO.vouchers.filter((v) => vMatches(v, p));
+const bestVoucher = (p) => (p ? vouchersFor(p) : PROMO.vouchers)[0] || null;
+const vScopeText = (v) => v.scope === "collection" ? `${COLLECTIONS.find((c) => c.id === v.target)?.name || "Category"} only` : v.scope === "products" ? "Selected items only" : "";
 // Photo for a chosen option, e.g. "Black" or "Black / XL" (CJ sends one per option)
 const variantImg = (p, variant) => {
   const vi = p.variantImages || {};
@@ -151,7 +155,7 @@ const offPct = (p) => (p.compareAt && p.compareAt > p.price ? Math.round((1 - p.
 
 const stars = (r, n) => `<div class="stars"><i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${r.toFixed(1)} (${n.toLocaleString()})</div>`;
 function card(p) {
-  const off = offPct(p), v = bestVoucher(), freeShip = p.price >= FREE_SHIP;
+  const off = offPct(p), v = bestVoucher(p), freeShip = p.price >= FREE_SHIP;
   return `<div class="card"><div class="media-wrap"><a href="/products/${p.id}" data-link><div class="media">
       ${p.stock === 0 ? `<span class="badge out">Sold out</span>` : p.promo ? `<span class="badge flash">⚡<span class="fl-txt"> ${esc(p.promo.label)}</span></span>` : p.badge ? `<span class="badge">${esc(p.badge)}</span>` : ""}
       ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}
@@ -284,10 +288,12 @@ function home() {
 const wallet = () => { try { const w = JSON.parse(localStorage.getItem("lp_vouchers") || "[]"); const old = localStorage.getItem("lp_voucher"); return old && !w.includes(old) ? [...w, old] : w; } catch { return []; } };
 const saveWallet = (w) => { try { localStorage.setItem("lp_vouchers", JSON.stringify([...new Set(w)].slice(-30))); } catch {} };
 function vCheck(v, q) {
-  // q: last quote — subtotal and shipping before vouchers
-  const sub = q?.subtotal || 0, ship = (q?.shipping || 0);
+  // q: last quote — subtotal and shipping before vouchers. Scoped vouchers only count matching cart items.
+  const scoped = v.scope === "collection" || v.scope === "products";
+  const sub = scoped ? cart.lines().filter((l) => vMatches(v, l.p)).reduce((s, l) => s + l.p.price * l.qty, 0) : (q?.subtotal || 0), ship = (q?.shipping || 0);
+  if (scoped && !sub) return { ok: false, reason: v.scope === "collection" ? `Only for ${vScopeText(v).replace(" only", "")} items` : "Only for selected items" };
   if (v.ends_at && new Date(v.ends_at.replace(" ", "T") + "Z") < new Date()) return { ok: false, reason: "Expired" };
-  if (sub < (v.min_spend || 0)) return { ok: false, reason: `Add ${money(v.min_spend - sub)} more to use` };
+  if (sub < (v.min_spend || 0)) return { ok: false, reason: `Add ${money(v.min_spend - sub)} more${scoped ? " of eligible items" : ""} to use` };
   if (v.type === "shipping") { if (!(ship > 0)) return { ok: false, reason: "Your shipping is already free" }; return { ok: true, amount: Math.min(ship, v.amount > 0 ? v.amount : ship) }; }
   if (v.type === "amount") return { ok: true, amount: Math.min(v.amount, sub) };
   let a = sub * v.percent / 100; if (v.max_off > 0) a = Math.min(a, v.max_off); return { ok: true, amount: Math.round(a * 100) / 100 };
@@ -298,7 +304,7 @@ function bestVouchers(q) {
   return { code: pick(all.filter((v) => v.type !== "shipping")), shipCode: pick(all.filter((v) => v.type === "shipping")) };
 }
 const vLeft = (v) => v.type === "shipping" ? `<b>FREE</b><span>SHIPPING</span>` : v.type === "amount" ? `<b>${money(v.amount).replace(".00", "")}</b><span>OFF</span>` : `<b>${v.percent}%</b><span>OFF</span>`;
-const vSub = (v) => [v.min_spend ? `Min. spend ${money(v.min_spend)}` : "No min. spend", v.type === "percent" && v.max_off ? `max ${money(v.max_off)} off` : v.type === "shipping" && v.amount ? `up to ${money(v.amount)}` : "",
+const vSub = (v) => [vScopeText(v), v.min_spend ? `Min. spend ${money(v.min_spend)}` : "No min. spend", v.type === "percent" && v.max_off ? `max ${money(v.max_off)} off` : v.type === "shipping" && v.amount ? `up to ${money(v.amount)}` : "",
   v.first_order ? "First order" : "", v.ends_at ? `Valid till ${new Date(v.ends_at.replace(" ", "T") + "Z").toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""].filter(Boolean).join(" · ");
 function voucherSheet(V, done) {
   const q = V.last || {};
@@ -336,10 +342,11 @@ function voucherSheet(V, done) {
   document.body.appendChild(ov); render();
 }
 
-function voucherStrip() {
-  if (!PROMO.vouchers.length) return "";
+function voucherStrip(catId) {
+  const list = catId ? PROMO.vouchers.filter((v) => !v.scope || v.scope === "all" || (v.scope === "collection" && v.target === catId) || (v.scope === "products" && PRODUCTS.some((p) => p.collection === catId && (v.target || []).includes(p.id)))) : PROMO.vouchers;
+  if (!list.length) return "";
   const have = wallet();
-  return `<section class="vouchers"><div class="wrap"><div class="v-rail">${PROMO.vouchers.map((v) => `<div class="vcard ${v.type}"><div class="v-left">${vLeft(v)}</div>
+  return `<section class="vouchers"><div class="wrap"><div class="v-rail">${list.map((v) => `<div class="vcard ${v.type}"><div class="v-left">${vLeft(v)}</div>
     <div class="v-mid"><b>${esc(v.label || v.title)}</b><span>${esc(vSub(v))}</span></div>
     ${have.includes(v.code) ? `<button class="btn sm ghost" disabled>Claimed ✓</button>` : `<button class="btn sm accent" data-claim="${esc(v.code)}">Claim</button>`}</div>`).join("")}</div></div></section>`;
 }
@@ -380,7 +387,7 @@ function collection(id, params) {
         : (() => { const s = c ? schedForCat(c.id) : null; return s ? `<div class="sched-line big">📅 ${esc(s.label)}: ${s.percent}% off — ${esc(s.text)}</div>` : ""; })()}</div></div>`
     : `<div class="page-head"><div class="crumbs"><a href="/" data-link>Home</a> / Search</div><h1>${esc(title)}</h1></div>`}
     ${q ? "" : `<div class="chips"><a class="chip ${id === "all" ? "on" : ""}" href="/collections/all" data-link>All</a>${COLLECTIONS.map((x) => `<a class="chip ${x.id === id ? "on" : ""}" href="/collections/${x.id}" data-link>${esc(x.name)}</a>`).join("")}</div>`}
-    ${voucherStrip()}
+    ${voucherStrip(q ? null : id === "all" ? null : id)}
     <div class="sort-tabs">${[["popular", "Popular"], ["latest", "Latest"], ["top", "Top sales"], ["deals", "Deals"]].map(([v, t]) => `<button data-sort="${v}">${t}</button>`).join("")}<button data-sort="price">Price <i>↕</i></button></div>
     <div class="toolbar"><div class="filters">
       <label><input type="checkbox" id="fStock" ${state.stock ? "checked" : ""}> In stock</label>
@@ -509,7 +516,7 @@ function product(id) {
       ${p.promo ? `<div class="flash-bar"><span>⚡ ${esc(p.promo.label)}</span><span>Ends in <b data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</b></span></div>`
         : (() => { const s = schedFor(p); return s ? `<div class="sched-line big" style="margin-top:12px">📅 ${esc(s.label)}: ${s.percent}% off this item — ${esc(s.text)}</div>` : ""; })()}
       <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
-      ${PROMO.vouchers.length ? `<div class="pdp-vouchers">${PROMO.vouchers.map((v) => `<button class="vchip ${v.type}" data-claim="${esc(v.code)}">${v.type === "shipping" ? "🚚" : "🎟"} ${esc(v.label || v.title)}${v.min_spend ? ` · min ${money(v.min_spend)}` : ""}</button>`).join("")}</div>` : ""}
+      ${vouchersFor(p).length ? `<div class="pdp-vouchers">${vouchersFor(p).map((v) => `<button class="vchip ${v.type}" data-claim="${esc(v.code)}">${v.type === "shipping" ? "🚚" : "🎟"} ${esc(v.label || v.title)}${v.min_spend ? ` · min ${money(v.min_spend)}` : ""}</button>`).join("")}</div>` : ""}
       ${(() => { const g = giftFor(p); return g ? `<div class="gift-box">${g.gift.image ? `<img src="${esc(g.gift.image)}" alt="">` : `<div class="gift-ico">🎁</div>`}<div><b>🎁 FREE GIFT with this item</b>
         <span>${esc(g.gift.title)}${g.gift.variant ? " (" + esc(g.gift.variant) + ")" : ""}${g.gift.value ? ` — worth ${money(g.gift.value)}` : ""}</span><small>Added to your order automatically${g.perItem ? " — one per item you buy" : ""}.</small></div></div>` : ""; })()}
       ${p.price >= FREE_SHIP ? `<div class="perk">✓ Free US shipping on this item</div>` : `<div class="perk">Free US shipping on orders over ${money(FREE_SHIP)}</div>`}
