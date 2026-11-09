@@ -103,6 +103,17 @@ function cjVideo(d) {
   return null;
 }
 
+// CJ's API gives only video ids; the public product page carries the playable video-cf.cjdropshipping.com link.
+export async function cjPageVideo(pid) {
+  try {
+    const r = await fetch(`https://cjdropshipping.com/product/p-p-${encodeURIComponent(pid)}.html`, { headers: { "user-agent": "Mozilla/5.0 (compatible; LeeysPremiumBot/1.0)", accept: "text/html" }, redirect: "follow" });
+    if (!r.ok) return { video: null, why: "CJ page HTTP " + r.status };
+    const html = (await r.text()).replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
+    const m = html.match(/https?:\/\/video[\w.-]*\.cjdropshipping\.com\/[^"'\s<>\\]+?\.mp4/i);
+    return m ? { video: m[0].replace(/^http:/, "https:") } : { video: null, why: "no video link in CJ page (" + html.length + " bytes)" };
+  } catch (e) { return { video: null, why: e.message }; }
+}
+
 export async function cjProduct(env, pid) {
   const d = await call(env, `/product/query?pid=${encodeURIComponent(pid)}&features=enable_video`);
   const variants = (d.variants || []).map((v) => ({ vid: v.vid, key: v.variantKey || v.variantNameEn || v.vid, cost: num(v.variantSellPrice), image: v.variantImage }));

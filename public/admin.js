@@ -365,7 +365,7 @@ function productModal(p) {
       const r = await api("/api/admin/cj/video?pid=" + encodeURIComponent(p.supplierPid));
       const out = $("#pvCjOut", m); out.hidden = false;
       if (r.video) { await api("/api/admin/products/" + p.id, "PATCH", { video: r.video }); m.remove(); toast("CJ video added to this product"); products(); return; }
-      out.textContent = "CJ sent no playable video link for this product. What CJ returned: " + JSON.stringify(r.raw);
+      out.textContent = (r.raw && r.raw.length ? "CJ has a video but we couldn't read its link (" + (r.page || "") + "). " : "This product has no video on CJ. ") + "CJ returned: " + JSON.stringify(r.raw);
     } catch (e) { toast(e.message); }
     pvCj.disabled = false; pvCj.textContent = "Get CJ video";
   };
