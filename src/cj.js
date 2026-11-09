@@ -91,12 +91,24 @@ export async function cjSearch(env, opts = {}) {
   }
 }
 
+// CJ returns productVideo only when features=enable_video is sent. Entries may be URLs, objects or bare ids.
+function cjVideo(d) {
+  let v = d.productVideo ?? d.videoList ?? d.video ?? [];
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { v = v.split(/[,;\s]+/); } }
+  for (const e of [].concat(v || [])) {
+    const u = typeof e === "string" ? e : e && (e.videoUrl || e.url || e.playUrl || e.mp4Url || e.src);
+    if (typeof u === "string" && /^https?:\/\//.test(u.trim())) return u.trim().replace(/^http:/, "https:");
+    if (typeof u === "string" && /^\/\//.test(u.trim())) return "https:" + u.trim();
+  }
+  return null;
+}
+
 export async function cjProduct(env, pid) {
-  const d = await call(env, `/product/query?pid=${encodeURIComponent(pid)}`);
+  const d = await call(env, `/product/query?pid=${encodeURIComponent(pid)}&features=enable_video`);
   const variants = (d.variants || []).map((v) => ({ vid: v.vid, key: v.variantKey || v.variantNameEn || v.vid, cost: num(v.variantSellPrice), image: v.variantImage }));
   return {
     pid: d.pid, title: d.productNameEn, description: (d.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500),
-    images: imgs(d), cost: num(d.sellPrice), variants,
+    images: imgs(d), cost: num(d.sellPrice), variants, video: cjVideo(d), rawVideo: d.productVideo ?? d.videoList ?? null,
   };
 }
 
@@ -113,7 +125,7 @@ export function cjToRecord(p, { markup = 2.5, collection = "", ships = "intl" } 
     id: slug, title: (p.title || "").slice(0, 120), description: p.description, collection, price, compare_at: null, cost,
     stock: 100, images: JSON.stringify(p.images), ships, supplier: "cj", supplier_pid: p.pid,
     variants: JSON.stringify(p.variants.length > 1 ? [{ name: "Option", options: p.variants.map((v) => v.key) }] : []),
-    variant_map: JSON.stringify(variantMap),
+    variant_map: JSON.stringify(variantMap), video: p.video || null,
   };
 }
 

@@ -120,8 +120,8 @@ async function syncProducts(env, limit = 20) {
       const cost = d.variants.length ? Math.max(...d.variants.map((v) => v.cost)) : d.cost;
       const first = d.variants[0]?.vid;
       const st = first ? await cjStock(env, first) : { total: p.stock, us: p.ships === "us" };
-      await env.DB.prepare("UPDATE products SET cost=?, stock=?, ships=?, variant_map=?, updated_at=datetime('now') WHERE id=?")
-        .bind(cost, Math.min(st.total, 999), st.us ? "us" : "intl", JSON.stringify(vm), p.id).run();
+      await env.DB.prepare("UPDATE products SET cost=?, stock=?, ships=?, variant_map=?, video=COALESCE(video, ?), updated_at=datetime('now') WHERE id=?")
+        .bind(cost, Math.min(st.total, 999), st.us ? "us" : "intl", JSON.stringify(vm), d.video, p.id).run();
       ok++;
     } catch (e) {
       errors.push(p.id + ": " + e.message);
@@ -642,12 +642,15 @@ async function admin(req, env, ctx, path, m, url) {
       }
       const rec = cjToRecord(d, { markup: Number(b.markup) || 2.5, collection, ships: st.us ? "us" : "intl" });
       rec.stock = Math.min(st.total || 0, 999) || 100;
-      await env.DB.prepare(`INSERT OR REPLACE INTO products (id,title,description,collection,price,compare_at,cost,stock,images,variants,variant_map,supplier,supplier_pid,ships,reviews,rating,active)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,5,?)`).bind(rec.id, rec.title, rec.description, rec.collection, rec.price, rec.compare_at, rec.cost, rec.stock,
-        rec.images, rec.variants, rec.variant_map, "cj", rec.supplier_pid, rec.ships, b.publish ? 1 : 0).run();
+      await env.DB.prepare(`INSERT OR REPLACE INTO products (id,title,description,collection,price,compare_at,cost,stock,images,variants,variant_map,supplier,supplier_pid,ships,reviews,rating,active,video)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,5,?,?)`).bind(rec.id, rec.title, rec.description, rec.collection, rec.price, rec.compare_at, rec.cost, rec.stock,
+        rec.images, rec.variants, rec.variant_map, "cj", rec.supplier_pid, rec.ships, b.publish ? 1 : 0, rec.video).run();
       if (b.publish) ctx.waitUntil(pingIndexNow(env, siteUrl(env, req), ["/products/" + rec.id]).catch(() => {}));
       return json(toAdmin(await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(rec.id).first()));
     } catch (e) { return bad(e.message, 502); }
+  }
+  if (path === "/api/admin/cj/video" && m === "GET") { // diagnostic: what CJ returns for a product's video
+    try { const d = await cjProduct(env, str(url.searchParams.get("pid"), 80)); return json({ video: d.video, raw: d.rawVideo }); } catch (e) { return bad(e.message, 502); }
   }
   if (path === "/api/admin/sync" && m === "POST") {
     try { const r = await syncProducts(env, 10); ctx.waitUntil(syncTracking(env)); return json(r); } catch (e) { return bad(e.message, 502); }
