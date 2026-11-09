@@ -326,7 +326,9 @@ function productModal(p) {
       <label class="full">Supplier link (where you order it)<input class="inp" name="supplierUrl" value="${esc(p.supplierUrl || "")}" placeholder="https://www.aliexpress.com/item/..."></label>
       ${isNew ? "" : `<div class="full"><b style="font-size:13px;color:var(--ink-2)">Product video</b><div class="flex" style="gap:10px;flex-wrap:wrap;margin-top:6px">
         ${p.video ? `<video src="${esc(p.video)}" muted controls style="width:160px;border-radius:10px;background:#000"></video><button type="button" class="btn sm ghost" id="pvRemove">Remove video</button>` : `<span class="muted" style="font-size:13px">No video yet</span>`}
-        <input type="file" id="pvFile" accept="video/mp4,video/quicktime,video/webm" class="inp" style="max-width:280px"><button type="button" class="btn sm accent" id="pvUp">Upload video</button><span id="pvProg" class="muted" style="font-size:13px"></span></div></div>`}
+        <input type="file" id="pvFile" accept="video/mp4,video/quicktime,video/webm" class="inp" style="max-width:280px"><button type="button" class="btn sm accent" id="pvUp">Upload video</button><span id="pvProg" class="muted" style="font-size:13px"></span>
+        ${p.supplier === "cj" && p.supplierPid ? `<button type="button" class="btn sm ghost" id="pvCj">Get CJ video</button>` : ""}</div>
+        ${p.supplier === "cj" && p.supplierPid ? `<div class="muted" style="font-size:12px;margin-top:6px">CJ product ID: <b style="user-select:all">${esc(p.supplierPid)}</b></div><pre id="pvCjOut" class="muted" style="font-size:12px;white-space:pre-wrap;margin:6px 0 0" hidden></pre>` : ""}</div>`}
       <label class="full">Image URLs (one per line)<textarea class="inp" name="images">${esc((p.images || []).join("\n"))}</textarea></label>
       <label class="full">Options (one per line, e.g. “Color: Black, White”)<textarea class="inp" name="variants" ${p.supplier === "cj" ? "disabled" : ""}>${esc(vtxt)}</textarea></label>
       <label class="full" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active" ${p.active ? "checked" : ""}> Visible in store</label>
@@ -356,6 +358,17 @@ function productModal(p) {
     catch (er) { toast(er.message); pvUp.disabled = false; $("#pvProg", m).textContent = ""; }
   };
   const pvRm = $("#pvRemove", m);
+  const pvCj = $("#pvCj", m);
+  if (pvCj) pvCj.onclick = async () => {
+    pvCj.disabled = true; pvCj.textContent = "Asking CJ…";
+    try {
+      const r = await api("/api/admin/cj/video?pid=" + encodeURIComponent(p.supplierPid));
+      const out = $("#pvCjOut", m); out.hidden = false;
+      if (r.video) { await api("/api/admin/products/" + p.id, "PATCH", { video: r.video }); m.remove(); toast("CJ video added to this product"); products(); return; }
+      out.textContent = "CJ sent no playable video link for this product. What CJ returned: " + JSON.stringify(r.raw);
+    } catch (e) { toast(e.message); }
+    pvCj.disabled = false; pvCj.textContent = "Get CJ video";
+  };
   if (pvRm) pvRm.onclick = async () => { await api("/api/admin/products/" + p.id, "PATCH", { video: "" }); m.remove(); toast("Video removed from product"); products(); };
   const del = $("#pd", m);
   if (del) del.onclick = async () => { if (!confirm("Delete this product permanently?")) return; await api("/api/admin/products/" + p.id, "DELETE"); m.remove(); toast("Deleted"); products(); };
