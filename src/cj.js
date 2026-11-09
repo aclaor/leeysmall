@@ -104,9 +104,10 @@ function cjVideo(d) {
 }
 
 // CJ's API gives only video ids; the public product page carries the playable video-cf.cjdropshipping.com link.
-export async function cjPageVideo(pid) {
+export async function cjPageVideo(pid, title = "") {
   try {
-    const r = await fetch(`https://cjdropshipping.com/product/p-p-${encodeURIComponent(pid)}.html`, { headers: { "user-agent": "Mozilla/5.0 (compatible; LeeysPremiumBot/1.0)", accept: "text/html" }, redirect: "follow" });
+    const slug = (title || "product").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "product";
+    const r = await fetch(`https://cjdropshipping.com/product/${slug}-p-${encodeURIComponent(pid)}.html`, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36", accept: "text/html,application/xhtml+xml", "accept-language": "en-US,en;q=0.9" }, redirect: "follow" });
     if (!r.ok) return { video: null, why: "CJ page HTTP " + r.status };
     const html = (await r.text()).replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
     const m = html.match(/https?:\/\/video[\w.-]*\.cjdropshipping\.com\/[^"'\s<>\\]+?\.mp4/i);

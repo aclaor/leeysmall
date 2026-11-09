@@ -328,7 +328,8 @@ function productModal(p) {
         ${p.video ? `<video src="${esc(p.video)}" muted controls style="width:160px;border-radius:10px;background:#000"></video><button type="button" class="btn sm ghost" id="pvRemove">Remove video</button>` : `<span class="muted" style="font-size:13px">No video yet</span>`}
         <input type="file" id="pvFile" accept="video/mp4,video/quicktime,video/webm" class="inp" style="max-width:280px"><button type="button" class="btn sm accent" id="pvUp">Upload video</button><span id="pvProg" class="muted" style="font-size:13px"></span>
         ${p.supplier === "cj" && p.supplierPid ? `<button type="button" class="btn sm ghost" id="pvCj">Get CJ video</button>` : ""}</div>
-        ${p.supplier === "cj" && p.supplierPid ? `<div class="muted" style="font-size:12px;margin-top:6px">CJ product ID: <b style="user-select:all">${esc(p.supplierPid)}</b></div><pre id="pvCjOut" class="muted" style="font-size:12px;white-space:pre-wrap;margin:6px 0 0" hidden></pre>` : ""}</div>`}
+        ${p.supplier === "cj" && p.supplierPid ? `<div class="muted" style="font-size:12px;margin-top:6px">CJ product ID: <b style="user-select:all">${esc(p.supplierPid)}</b></div><pre id="pvCjOut" class="muted" style="font-size:12px;white-space:pre-wrap;margin:6px 0 0" hidden></pre>` : ""}
+        <div class="flex" style="gap:8px;margin-top:8px;flex-wrap:wrap"><input class="inp" id="pvLink" placeholder="…or paste a video link (https://…mp4)" style="flex:1;min-width:240px"><button type="button" class="btn sm ghost" id="pvLinkSave">Use link</button></div></div>`}
       <label class="full">Image URLs (one per line)<textarea class="inp" name="images">${esc((p.images || []).join("\n"))}</textarea></label>
       <label class="full">Options (one per line, e.g. “Color: Black, White”)<textarea class="inp" name="variants" ${p.supplier === "cj" ? "disabled" : ""}>${esc(vtxt)}</textarea></label>
       <label class="full" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active" ${p.active ? "checked" : ""}> Visible in store</label>
@@ -358,6 +359,11 @@ function productModal(p) {
     catch (er) { toast(er.message); pvUp.disabled = false; $("#pvProg", m).textContent = ""; }
   };
   const pvRm = $("#pvRemove", m);
+  const pvLs = $("#pvLinkSave", m);
+  if (pvLs) pvLs.onclick = async () => {
+    const v = $("#pvLink", m).value.trim(); if (!/^https:\/\/\S+$/.test(v)) return toast("Paste a link starting with https://");
+    try { await api("/api/admin/products/" + p.id, "PATCH", { video: v }); m.remove(); toast("Video added to this product"); products(); } catch (e) { toast(e.message); }
+  };
   const pvCj = $("#pvCj", m);
   if (pvCj) pvCj.onclick = async () => {
     pvCj.disabled = true; pvCj.textContent = "Asking CJ…";

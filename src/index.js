@@ -115,7 +115,7 @@ async function syncProducts(env, limit = 20) {
   for (const p of rows) {
     try {
       const d = await cjProduct(env, p.supplier_pid);
-      if (!p.video && !d.video && d.rawVideo?.length) d.video = (await cjPageVideo(p.supplier_pid)).video;
+      if (!p.video && !d.video && d.rawVideo?.length) d.video = (await cjPageVideo(p.supplier_pid, d.title)).video;
       const vm = parse(p.variant_map, {});
       for (const v of d.variants) if (vm[v.key]) vm[v.key].cost = v.cost;
       const cost = d.variants.length ? Math.max(...d.variants.map((v) => v.cost)) : d.cost;
@@ -634,7 +634,7 @@ async function admin(req, env, ctx, path, m, url) {
     if (existing) return json({ ...toAdmin(existing), alreadyImported: true });
     try {
       const d = await cjProduct(env, str(b.pid, 80));
-      if (!d.video && d.rawVideo?.length) d.video = (await cjPageVideo(d.pid || str(b.pid, 80))).video;
+      if (!d.video && d.rawVideo?.length) d.video = (await cjPageVideo(d.pid || str(b.pid, 80), d.title)).video;
       let st = { total: 100, us: false };
       if (d.variants[0]) try { st = await cjStock(env, d.variants[0].vid); } catch {}
       let collection = str(b.collection, 40);
@@ -655,7 +655,7 @@ async function admin(req, env, ctx, path, m, url) {
     try {
       const pid = str(url.searchParams.get("pid"), 80), d = await cjProduct(env, pid);
       if (d.video || !d.rawVideo || !d.rawVideo.length) return json({ video: d.video, raw: d.rawVideo });
-      const pg = await cjPageVideo(pid); return json({ video: pg.video, raw: d.rawVideo, page: pg.why || "ok" });
+      const pg = await cjPageVideo(pid, d.title); return json({ video: pg.video, raw: d.rawVideo, page: pg.why || "ok" });
     } catch (e) { return bad(e.message, 502); }
   }
   if (path === "/api/admin/sync" && m === "POST") {
