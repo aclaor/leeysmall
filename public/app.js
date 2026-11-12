@@ -245,11 +245,11 @@ const pimg = (p) => (p.images && p.images[0] ? photoTag(p.images[0], p.title) : 
 function home() {
   if (!PRODUCTS.length) { app.innerHTML = `<div class="wrap prose"><h1>New products coming soon</h1></div>`; return; }
   const inStock = PRODUCTS.filter((p) => p.stock > 0);
-  const best = [...PRODUCTS].sort((a, b) => (b.sold || 0) - (a.sold || 0) || (b.rating || 0) - (a.rating || 0)).slice(0, 16);
+  const best = [...PRODUCTS].sort((a, b) => (b.sold || 0) - (a.sold || 0) || (b.rating || 0) - (a.rating || 0)).slice(0, 24);
   const maxOff = Math.max(0, ...PRODUCTS.map(offPct));
   const onSale = PRODUCTS.filter((p) => p.promo).sort((a, b) => b.promo.percent - a.promo.percent);
   const flashEnds = onSale.length ? onSale.map((p) => p.promo.endsAt).sort()[0] : null;
-  const fresh = [...PRODUCTS].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 16);
+  const fresh = [...PRODUCTS].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 24);
   const under25 = inStock.filter((p) => p.price <= 25).sort((a, b) => (b.sold || 0) - (a.sold || 0)).slice(0, 16);
   const usFast = inStock.filter((p) => p.ships === "us").slice(0, 16);
   const cats = COLLECTIONS.map((c) => ({ c, items: PRODUCTS.filter((p) => p.collection === c.id) })).filter((x) => x.items.length).sort((a, b) => b.items.length - a.items.length);
@@ -278,9 +278,9 @@ function home() {
     <button class="az-arrow l" data-rl="-1" aria-label="Previous">‹</button><button class="az-arrow r" data-rl="1" aria-label="Next">›</button></div></section>
   ${marquee()}
   ${homeOffers()}
-  ${cats.length ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(0, 4).map(quad).join("")}</div></section>` : ""}
-  ${onSale.length ? `<section class="az-shelf"><div class="wrap"><div class="az-band"><h2>⚡ Flash sale</h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
-    <div class="az-panel az-panel-band"><div class="az-rail" data-rail>${onSale.slice(0, 16).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
+  ${cats.length ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(0, 5).map(quad).join("")}</div></section>` : ""}
+  ${onSale.length ? `<section class="az-bleed"><div class="wrap"><div class="az-bleed-head"><h2>⚡ Flash sale</h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
+    <div class="az-rel"><div class="az-rail" data-rail>${onSale.slice(0, 20).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
   ${shelf("Top picks for you", "/collections/all?sort=top", best)}
   <section class="az-spot"><div class="wrap"><div class="az-panel az-spot-in">
     <div class="az-spot-copy"><span class="eyebrow">LeeysPremium spotlight${maxOff >= 10 ? ` · Up to ${maxOff}% off` : ""}</span><h2>Everything you need, in one place.</h2>
@@ -288,7 +288,7 @@ function home() {
       <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn live-btn ${CONFIG.live?.status === "live" ? "on" : ""}" href="/live" data-link><i></i>Premium Live${CONFIG.live?.status === "live" ? " · now" : ""}</a><a class="btn ghost video-btn" href="/videos" data-link>▶ Video</a></div></div>
     ${showcaseHTML()}</div></div></section>
   ${shelf("New arrivals", "/collections/all?sort=latest", fresh)}
-  ${cats.length > 4 ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(4, 8).map(quad).join("")}</div></section>` : ""}
+  ${cats.length > 5 ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(5, 10).map(quad).join("")}</div></section>` : ""}
   ${shelf("Deals under $25", "/collections/all?sort=price-asc", under25)}
   ${shelf("Fast delivery from US warehouses", "/collections/all", usFast)}
   ${trust()}`;
@@ -790,6 +790,7 @@ function route() {
   else notFound();
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === pathname));
   $("#backBtn").hidden = pathname === "/";
+  document.body.classList.toggle("home-wide", pathname === "/");
 }
 // Each in-store page remembers how deep we are, so Back returns to the previous store page
 // (or a sensible parent page when someone lands straight on a product from Google or a shared link).

@@ -754,3 +754,19 @@ body.vsheet-open #paypal-buttons { visibility: hidden; }
 .vcard.sched .v-left { background: linear-gradient(135deg, #2f8cff, #1546b8); }
 .vcard.sched:hover { box-shadow: var(--glow); }
 @media (max-width: 640px) { .az-offers { grid-template-columns: 1fr; } }
+
+/* Homepage uses the full screen width, like Amazon */
+body.home-wide .header .wrap, body.home-wide .announce, body.home-wide #app .wrap { max-width: none; padding-left: 18px; padding-right: 18px; }
+body.home-wide .az-hero-wrap .az-arrow.l { left: 24px; } body.home-wide .az-hero-wrap .az-arrow.r { right: 24px; }
+body.home-wide .az-tile { flex-basis: calc((100% - 5 * 14px) / 6); min-width: 230px; }
+body.home-wide .az-quad-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+body.home-wide .az-rail > * { flex-basis: 196px; }
+.az-bleed { margin: 14px 0; padding: 16px 0 20px; background: linear-gradient(100deg, #ff7a18 0%, #ff3d6e 50%, #8b3dff 100%); }
+.az-bleed-head { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; color: #fff; }
+.az-bleed-head h2 { margin: 0; font-size: 26px; color: #fff; font-weight: 800; }
+.az-bleed-head .flash-timer, .az-bleed-head .flash-timer b { color: #fff; }
+.az-bleed-head a { margin-left: auto; color: #fff; font-weight: 700; }
+.az-bleed-head a:hover { text-decoration: underline; }
+.az-rel { position: relative; }
+.az-bleed .az-rail > * { background: rgba(8,12,26,.92); border-radius: 14px; }
+@media (max-width: 640px) { body.home-wide .az-tile { flex-basis: 72vw; } body.home-wide .az-rail > * { flex-basis: 46vw; } .az-bleed-head { flex-wrap: wrap; gap: 4px 12px; } .az-bleed-head a { margin-left: 0; } }
