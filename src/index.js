@@ -441,9 +441,13 @@ async function admin(req, env, ctx, path, m, url) {
     return json({ ok: true, count: ids.length });
   }
   if (path === "/api/admin/products" && m === "GET") {
-    return json((await env.DB.prepare("SELECT * FROM products ORDER BY created_at DESC").all()).results.map(toAdmin));
+    // Lean list (thousands of products): short description, no variant map. The editor loads the full record.
+    const rows = (await env.DB.prepare(`SELECT id,title,substr(description,1,300) description,collection,price,compare_at,cost,stock,rating,reviews,badge,sold,created_at,video,
+      hue,icon,ships,images,variants,supplier,supplier_pid,supplier_url,active,updated_at FROM products ORDER BY created_at DESC`).all()).results;
+    return json(rows.map((r) => ({ ...toAdmin(r), lite: true })));
   }
   if ((p = path.match(/^\/api\/admin\/products\/([\w-]+)$/))) {
+    if (m === "GET") { const r = await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(p[1]).first(); return r ? json(toAdmin(r)) : bad("Not found", 404); }
     if (m === "DELETE") { await env.DB.prepare("DELETE FROM products WHERE id=?").bind(p[1]).run(); return json({ ok: true }); }
     if (m === "PATCH") {
       const b = await body(req), map = { title: "title", description: "description", collection: "collection", price: "price", compareAt: "compare_at",

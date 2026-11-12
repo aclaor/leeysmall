@@ -308,7 +308,8 @@ function autoSortModal(list) {
     upd();
   }
 }
-function productModal(p) {
+async function productModal(p) {
+  if (p && p.lite) try { p = await api("/api/admin/products/" + p.id); } catch {}
   const isNew = !p; p = p || { title: "", description: "", price: "", compareAt: "", cost: "", stock: 100, images: [], variants: [], supplier: "aliexpress", active: true, ships: "intl" };
   const vtxt = (p.variants || []).map((v) => v.name + ": " + v.options.join(", ")).join("\n");
   const m = modal(`<h2>${isNew ? "Add product" : "Edit product"}</h2>${isNew ? `<p class="muted">Use this for AliExpress items you order by hand. CJ products are added from “Import from CJ”.</p>` : ""}
