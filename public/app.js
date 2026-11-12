@@ -277,9 +277,7 @@ function home() {
       <div class="az-tile-art">${t.imgs ? t.imgs.map((p, i) => `<div class="az-ti az-ti${i}">${pimg(p)}</div>`).join("") : `<div class="az-ticon">${t.icon}</div>`}</div></a>`).join("")}</div>
     <button class="az-arrow l" data-rl="-1" aria-label="Previous">‹</button><button class="az-arrow r" data-rl="1" aria-label="Next">›</button></div></section>
   ${marquee()}
-  ${voucherStrip()}
-  ${(PROMO.schedules || []).length ? `<section class="vouchers"><div class="wrap"><div class="v-rail">${PROMO.schedules.map((s) => `<a class="sched-card" href="${s.scope === "collection" ? "/collections/" + s.target : "/collections/all"}" data-link>
-    <b>📅 ${s.percent}% off</b><span>${esc(s.label)}${s.scope === "collection" ? " · " + esc(COLLECTIONS.find((c) => c.id === s.target)?.name || "") : ""}</span><small>${esc(s.text)}</small></a>`).join("")}</div></div></section>` : ""}
+  ${homeOffers()}
   ${cats.length ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(0, 4).map(quad).join("")}</div></section>` : ""}
   ${onSale.length ? `<section class="az-shelf"><div class="wrap"><div class="az-band"><h2>⚡ Flash sale</h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
     <div class="az-panel az-panel-band"><div class="az-rail" data-rail>${onSale.slice(0, 16).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
@@ -365,6 +363,19 @@ function voucherStrip(catId) {
   return `<section class="vouchers"><div class="wrap"><div class="v-rail">${list.map((v) => `<div class="vcard ${v.type}"><div class="v-left">${vLeft(v)}</div>
     <div class="v-mid"><b>${esc(v.label || v.title)}</b><span>${esc(vSub(v))}</span></div>
     ${have.includes(v.code) ? `<button class="btn sm ghost" disabled>Claimed ✓</button>` : `<button class="btn sm accent" data-claim="${esc(v.code)}">Claim</button>`}</div>`).join("")}</div></div></section>`;
+}
+// Homepage: vouchers + weekly deals together in one panel, all cards the same shape.
+function homeOffers() {
+  const vs = PROMO.vouchers || [], ss = PROMO.schedules || [];
+  if (!vs.length && !ss.length) return "";
+  const have = wallet();
+  const vc = vs.map((v) => `<div class="vcard ${v.type}"><div class="v-left">${vLeft(v)}</div>
+    <div class="v-mid"><b>${esc(v.label || v.title)}</b><span>${esc(vSub(v))}</span></div>
+    ${have.includes(v.code) ? `<button class="btn sm ghost" disabled>Claimed ✓</button>` : `<button class="btn sm accent" data-claim="${esc(v.code)}">Claim</button>`}</div>`);
+  const sc = ss.map((x) => `<a class="vcard sched" href="${x.scope === "collection" ? "/collections/" + x.target : "/collections/all"}" data-link><div class="v-left"><b>${x.percent}%</b><span>OFF</span></div>
+    <div class="v-mid"><b>${esc(x.label)}</b><span>${x.scope === "collection" ? esc(COLLECTIONS.find((c) => c.id === x.target)?.name || "") + " · " : ""}${esc(x.text)}</span></div><span class="btn sm ghost">Shop ›</span></a>`);
+  return `<section class="az-shelf"><div class="wrap"><div class="az-panel"><div class="az-shelf-head"><h2>🎟 Vouchers & weekly deals</h2><a href="/collections/all?sort=deals" data-link>See deals ›</a></div>
+    <div class="az-offers">${[...vc, ...sc].join("")}</div></div></div></section>`;
 }
 function bindVouchers() {
   document.querySelectorAll("[data-claim]").forEach((b) => (b.onclick = () => {

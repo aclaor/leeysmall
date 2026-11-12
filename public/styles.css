@@ -746,3 +746,11 @@ body.vsheet-open #paypal-buttons { visibility: hidden; }
 .az-hero-wrap .az-arrow { top: 64%; }
 .az-quad-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
 .az-spot-in { overflow: hidden; }
+.az-offers { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.az-offers .vcard { min-width: 0; height: 86px; }
+.az-offers .v-mid { flex: 1; min-width: 0; }
+.az-offers .v-mid span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vcard.sched { border-color: rgba(92,178,255,.4); color: inherit; }
+.vcard.sched .v-left { background: linear-gradient(135deg, #2f8cff, #1546b8); }
+.vcard.sched:hover { box-shadow: var(--glow); }
+@media (max-width: 640px) { .az-offers { grid-template-columns: 1fr; } }
