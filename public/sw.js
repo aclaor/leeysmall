@@ -2,7 +2,7 @@
 // Pages: network first (always fresh), falls back to the cached shell when offline.
 // Static files: served from cache, refreshed in the background.
 // API, checkout, admin and payments: never cached.
-const VERSION = "lp-v6";
+const VERSION = "lp-v7";
 const SHELL = ["/", "/styles.css", "/app.js", "/manifest.webmanifest", "/favicon.svg", "/icons/icon-192.png", "/offline.html"];
 
 self.addEventListener("install", (e) => {

@@ -278,7 +278,7 @@ function home() {
     <button class="az-arrow l" data-rl="-1" aria-label="Previous">‹</button><button class="az-arrow r" data-rl="1" aria-label="Next">›</button></div></section>
   ${marquee()}
   ${homeOffers()}
-  ${cats.length ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(0, 5).map(quad).join("")}</div></section>` : ""}
+  ${cats.length ? `<section class="az-quads"><div class="wrap az-quad-grid" style="--n:${Math.min(5, cats.length)}">${cats.slice(0, 5).map(quad).join("")}</div></section>` : ""}
   ${onSale.length ? `<section class="az-bleed"><div class="wrap"><div class="az-bleed-head"><h2>⚡ Flash sale</h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
     <div class="az-rel"><div class="az-rail" data-rail>${onSale.slice(0, 20).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
   ${shelf("Top picks for you", "/collections/all?sort=top", best)}
@@ -288,7 +288,7 @@ function home() {
       <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn live-btn ${CONFIG.live?.status === "live" ? "on" : ""}" href="/live" data-link><i></i>Premium Live${CONFIG.live?.status === "live" ? " · now" : ""}</a><a class="btn ghost video-btn" href="/videos" data-link>▶ Video</a></div></div>
     ${showcaseHTML()}</div></div></section>
   ${shelf("New arrivals", "/collections/all?sort=latest", fresh)}
-  ${cats.length > 5 ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(5, 10).map(quad).join("")}</div></section>` : ""}
+  ${cats.length > 5 ? `<section class="az-quads"><div class="wrap az-quad-grid" style="--n:${Math.min(5, cats.length - 5)}">${cats.slice(5, 10).map(quad).join("")}</div></section>` : ""}
   ${shelf("Deals under $25", "/collections/all?sort=price-asc", under25)}
   ${shelf("Fast delivery from US warehouses", "/collections/all", usFast)}
   ${trust()}`;
