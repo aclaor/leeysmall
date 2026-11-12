@@ -562,7 +562,8 @@ function product(id) {
   $("#country").onchange = (e) => { country = e.target.value; setShopCountry(country); $("#eta").textContent = deliveryText(p, country); };
   bindVouchers();
   $("#addBtn").onclick = () => { cart.add(p.id, variantStr(), qty); openDrawer(); };
-  $("#buyBtn").onclick = () => { cart.add(p.id, variantStr(), qty); go("/checkout"); };
+  // Buy it now = check out only this item (like Amazon); the cart is left as it is.
+  $("#buyBtn").onclick = () => { const v = variantStr(); try { sessionStorage.setItem("lp_buynow", JSON.stringify([{ key: p.id + "|" + (v || ""), id: p.id, variant: v, qty }])); } catch { cart.add(p.id, v, qty); return go("/checkout"); } go("/checkout?buy=1"); };
 }
 
 function cartPage() {
@@ -594,7 +595,14 @@ async function api(path, data) {
 
 function checkout() {
   document.title = "Checkout — LeeysPremium";
-  const lines = cart.lines();
+  let buy = null;
+  if (new URLSearchParams(location.search).get("buy")) try { buy = JSON.parse(sessionStorage.getItem("lp_buynow") || "null"); } catch {}
+  const bag = buy && buy.length ? {
+    items: buy, save() { try { sessionStorage.setItem("lp_buynow", JSON.stringify(this.items)); } catch {} },
+    lines() { return this.items.map((l) => ({ ...l, p: PRODUCTS.find((p) => p.id === l.id) })).filter((l) => l.p); },
+    set(key, qty) { const l = this.items.find((x) => x.key === key); if (!l) return; l.qty = Math.max(0, qty); this.items = this.items.filter((x) => x.qty > 0); this.save(); },
+  } : cart;
+  const lines = bag.lines();
   if (!lines.length) return go("/cart", true);
   const V = { code: "", shipCode: "", manual: false, last: null, extra: [] };
   let saved = {}; try { saved = JSON.parse(localStorage.getItem("lp_addr") || "{}") || {}; } catch {}
@@ -625,7 +633,7 @@ function checkout() {
       <p class="co-fine">🔁 30-day easy returns · 📦 Tracking on every order</p></aside></div></div>`;
   if (saved.country) $("#coCountry").value = saved.country;
   const renderItems = () => {
-    const ls = cart.lines(), n = ls.reduce((t, l) => t + l.qty, 0), c = $("#coCountry").value;
+    const ls = bag.lines(), n = ls.reduce((t, l) => t + l.qty, 0), c = $("#coCountry").value;
     if (!ls.length) return go("/cart", true);
     $("#coCount").textContent = `(${n} item${n === 1 ? "" : "s"})`;
     $("#coItems").innerHTML = ls.map((l) => `<div class="co-item"><div class="co-arrive">${esc(deliveryText(l.p, c))}</div>
@@ -636,14 +644,14 @@ function checkout() {
   };
   renderItems();
   const form = $("#coForm"), err = (m) => { const e = $("#coError"); e.textContent = m || ""; e.hidden = !m; };
-  const items = () => cart.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
+  const items = () => bag.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
   const quote = async () => {
     try {
       const q = await api("/api/quote", { items: items(), code: V.code, shipCode: V.shipCode, country: form.country.value, email: form.email.value });
       V.last = q;
       if (!V.manual && !V.autoDone) { V.autoDone = true; const best = bestVouchers(q); if (best.code !== V.code || best.shipCode !== V.shipCode) { Object.assign(V, best); return quote(); } }
       $("#vpickSel").innerHTML = [q.shipCode && `<span class="vtag ship">${esc(q.shipCode)}</span>`, q.code && `<span class="vtag">${esc(q.code)}</span>`].filter(Boolean).join(" ") || "Select or enter code ›";
-      const n = cart.items.reduce((t, l) => t + l.qty, 0);
+      const n = bag.items.reduce((t, l) => t + l.qty, 0);
       $("#totals").innerHTML = `<div class="row-between"><span>Items (${n}):</span><span>${money(q.subtotal)}</span></div>
         ${q.discount ? `<div class="row-between"><span>Voucher (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
         ${q.codeNote ? `<div class="muted" style="font-size:13px">🎟 ${esc(q.codeNote)}</div>` : ""}
@@ -665,7 +673,7 @@ function checkout() {
   $("#useAddr").onclick = () => { if (!valid()) return; try { localStorage.setItem("lp_addr", JSON.stringify(addr())); } catch {} showAddr(false); };
   $("#ch1").onclick = () => showAddr(true);
   if (saved.address1 && saved.email) showAddr(false);
-  $("#coItems").onclick = (e) => { const b = e.target.closest("[data-cq]"); if (!b) return; const l = cart.items.find((x) => x.key === b.dataset.cq); if (!l) return; cart.set(l.key, l.qty + Number(b.dataset.d)); renderItems(); quote(); };
+  $("#coItems").onclick = (e) => { const b = e.target.closest("[data-cq]"); if (!b) return; const l = bag.items.find((x) => x.key === b.dataset.cq); if (!l) return; bag.set(l.key, l.qty + Number(b.dataset.d)); renderItems(); quote(); };
   form.country.onchange = () => { renderItems(); quote(); };
   form.email.addEventListener("change", quote);
   $("#vpick").onclick = () => voucherSheet(V, () => quote());
@@ -688,7 +696,7 @@ function checkout() {
         localId = r.orderId; return r.paypalOrderId;
       },
       onApprove: async () => {
-        try { const r = await api("/api/checkout/capture", { orderId: localId }); cart.items = []; cart.save(); go("/thank-you?order=" + encodeURIComponent(r.orderId)); }
+        try { const r = await api("/api/checkout/capture", { orderId: localId }); if (bag === cart) { cart.items = []; cart.save(); } else { try { sessionStorage.removeItem("lp_buynow"); } catch {} } go("/thank-you?order=" + encodeURIComponent(r.orderId)); }
         catch (e) { err(e.message + ". You have not been charged — please try again."); }
       },
       onError: () => err("Payment couldn't be completed. Please try again or use another method."),
