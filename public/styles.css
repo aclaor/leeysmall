@@ -674,3 +674,75 @@ body.vsheet-open #paypal-buttons { visibility: hidden; }
 @media (max-width: 900px) { .checkout.amz { grid-template-columns: 1fr; } .checkout.amz .co-summary { position: static; } .co-sum { padding-left: 18px; } }
 @media (max-width: 480px) { .co-irow .thumb { width: 76px; height: 76px; } .co-top h1 { font-size: 22px; } .co-secure { display: none; } }
 @media (max-width: 900px) { .checkout.amz .co-summary { order: 2; } .checkout.amz .co-form { order: 1; } }
+
+/* ---------- Amazon-style homepage (LeeysPremium theme) ---------- */
+.az-hero { padding: 18px 0 10px; background: radial-gradient(900px 420px at 50% 0%, rgba(47,140,255,.22), transparent 70%); }
+.az-hero-wrap { position: relative; }
+.az-tiles, .az-rail { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; scroll-padding: 0 2px; }
+.az-tiles::-webkit-scrollbar, .az-rail::-webkit-scrollbar { display: none; }
+.az-tile { flex: 0 0 252px; height: 400px; scroll-snap-align: start; border-radius: 18px; padding: 18px 18px 0; display: flex; flex-direction: column; position: relative; overflow: hidden; color: #fff;
+  border: 1px solid rgba(255,255,255,.12); box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .25s, box-shadow .25s; }
+.az-tile:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,.45), var(--glow); }
+.az-eb { font-size: 15px; opacity: .9; }
+.az-h { font-size: 28px; line-height: 1.1; font-weight: 800; letter-spacing: -.01em; margin: 6px 0 12px; }
+.az-pill { align-self: flex-start; background: #ffd23f; color: #111; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 999px; }
+.az-pill b { color: #111; }
+.az-tile-art { position: relative; flex: 1; margin: 14px -18px 0; }
+.az-ti { position: absolute; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 24px rgba(0,0,0,.35); }
+.az-ti img, .az-ti > div { width: 100%; height: 100%; object-fit: contain; }
+.az-ti0 { width: 66%; aspect-ratio: 1; left: 8%; bottom: 14px; transform: rotate(-4deg); z-index: 2; }
+.az-ti1 { width: 50%; aspect-ratio: 1; right: 6%; top: 4px; transform: rotate(6deg); }
+.az-ticon { position: absolute; inset: 0; display: grid; place-items: center; font-size: 96px; filter: drop-shadow(0 10px 24px rgba(0,0,0,.4)); }
+.t-blue { background: linear-gradient(160deg, #2f8cff, #1546b8); }
+.t-violet { background: linear-gradient(160deg, #8b3dff, #4b16c4); }
+.t-teal { background: linear-gradient(160deg, #11a7a0, #0b5d74); }
+.t-magenta { background: linear-gradient(160deg, #d6338a, #7b1563); }
+.t-navy { background: linear-gradient(160deg, #1d3b78, #0a1838); }
+.t-amber { background: linear-gradient(160deg, #f08a24, #a2420e); }
+.t-red { background: linear-gradient(160deg, #ff4d6d, #9b1235); }
+.t-indigo { background: linear-gradient(160deg, #5468ff, #252f9e); }
+.t-green { background: linear-gradient(160deg, #1fae6b, #0d5b3a); }
+.t-slate { background: linear-gradient(160deg, #3c4a66, #141b2d); }
+.az-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 5; width: 44px; height: 88px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: rgba(8,12,26,.85); color: #fff; font-size: 30px; cursor: pointer; backdrop-filter: blur(6px); opacity: .9; }
+.az-arrow:hover { border-color: var(--blue); box-shadow: var(--glow); }
+.az-arrow.l { left: 6px; } .az-arrow.r { right: 6px; }
+.az-hero-wrap .az-arrow.l { left: 26px; } .az-hero-wrap .az-arrow.r { right: 26px; }
+.az-panel { position: relative; border: 1px solid var(--line); border-radius: 18px; background: rgba(10,16,34,.55); padding: 18px; }
+.az-shelf { padding: 10px 0; }
+.az-shelf-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+.az-shelf-head h2, .az-band h2 { margin: 0; font-size: 22px; color: #fff; }
+.az-shelf-head a, .az-band a { color: #6fb3ff; font-size: 14px; font-weight: 600; margin-left: auto; }
+.az-shelf-head a:hover, .az-band a:hover { text-decoration: underline; }
+.az-rail > * { flex: 0 0 210px; scroll-snap-align: start; }
+.az-panel .az-arrow { height: 72px; width: 38px; font-size: 26px; }
+.az-band { display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 18px 18px 0 0; background: linear-gradient(90deg, #ff7a18, #ff3d6e 55%, #8b3dff); }
+.az-band a { color: #fff; }
+.az-band .flash-timer { color: #fff; }
+.az-panel-band { border-radius: 0 0 18px 18px; border-top: 0; }
+.az-quads { padding: 10px 0; }
+.az-quad-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.az-quad { border: 1px solid var(--line); border-radius: 18px; background: rgba(10,16,34,.55); padding: 16px; display: flex; flex-direction: column; }
+.az-quad h3 { margin: 0 0 12px; font-size: 19px; color: #fff; }
+.az-q4 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
+.az-q4 a { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); }
+.az-q4 a:hover span { color: #fff; text-decoration: underline; }
+.az-qimg { aspect-ratio: 1; background: #fff; border-radius: 10px; overflow: hidden; }
+.az-qimg img, .az-qimg > div { width: 100%; height: 100%; object-fit: contain; }
+.az-q4 span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.az-more { color: #6fb3ff; font-size: 14px; font-weight: 600; margin-top: 12px; }
+.az-more:hover { text-decoration: underline; }
+.az-spot { padding: 10px 0; }
+.az-spot-in { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; padding: 28px 32px; background: radial-gradient(700px 400px at 80% 50%, rgba(47,140,255,.25), transparent 65%), rgba(10,16,34,.55); }
+.az-spot-copy h2 { font-size: clamp(26px, 3.4vw, 40px); color: #fff; margin: 8px 0 10px; }
+.az-spot-copy p { color: var(--ink-2); margin: 0 0 20px; }
+@media (max-width: 1000px) { .az-quad-grid { grid-template-columns: 1fr 1fr; } .az-spot-in { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .az-tile { flex-basis: 72vw; height: 340px; } .az-h { font-size: 24px; }
+  .az-arrow { display: none; } .az-rail > * { flex-basis: 46vw; }
+  .az-quad-grid { gap: 10px; } .az-quad { padding: 12px; } .az-quad h3 { font-size: 16px; } .az-q4 { gap: 8px; }
+  .az-spot-in { padding: 20px 16px; } .az-band { flex-wrap: wrap; gap: 6px 12px; } .az-band a { margin-left: 0; }
+}
+.az-hero-wrap .az-arrow { top: 64%; }
+.az-quad-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.az-spot-in { overflow: hidden; }

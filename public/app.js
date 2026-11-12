@@ -240,47 +240,61 @@ function marquee() {
   return `<div class="marquee" aria-hidden="false"><div class="mq-track"><div>${row}</div><div aria-hidden="true">${row}</div></div></div>`;
 }
 
+// Amazon-style homepage in the LeeysPremium theme: promo-card carousel, category quad cards and product shelves.
+const pimg = (p) => (p.images && p.images[0] ? photoTag(p.images[0], p.title) : art(p));
 function home() {
   if (!PRODUCTS.length) { app.innerHTML = `<div class="wrap prose"><h1>New products coming soon</h1></div>`; return; }
-  const best = [...PRODUCTS].sort((a, b) => (b.sold || 0) - (a.sold || 0)).slice(0, 8);
+  const inStock = PRODUCTS.filter((p) => p.stock > 0);
+  const best = [...PRODUCTS].sort((a, b) => (b.sold || 0) - (a.sold || 0) || (b.rating || 0) - (a.rating || 0)).slice(0, 16);
   const maxOff = Math.max(0, ...PRODUCTS.map(offPct));
   const onSale = PRODUCTS.filter((p) => p.promo).sort((a, b) => b.promo.percent - a.promo.percent);
   const flashEnds = onSale.length ? onSale.map((p) => p.promo.endsAt).sort()[0] : null;
-  const deal = [...PRODUCTS].filter((p) => p.stock > 0).sort((a, b) => offPct(b) - offPct(a))[0] || PRODUCTS[0];
-  const fresh = [...PRODUCTS].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 8);
+  const fresh = [...PRODUCTS].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 16);
+  const under25 = inStock.filter((p) => p.price <= 25).sort((a, b) => (b.sold || 0) - (a.sold || 0)).slice(0, 16);
+  const usFast = inStock.filter((p) => p.ships === "us").slice(0, 16);
+  const cats = COLLECTIONS.map((c) => ({ c, items: PRODUCTS.filter((p) => p.collection === c.id) })).filter((x) => x.items.length).sort((a, b) => b.items.length - a.items.length);
+  const pick4 = (list) => [...list].sort((a, b) => (b.sold || 0) - (a.sold || 0) || ((b.images || []).length ? 1 : 0) - ((a.images || []).length ? 1 : 0)).slice(0, 4);
+  const shelf = (title, href, list, extra = "") => list.length ? `<section class="az-shelf"><div class="wrap"><div class="az-panel">
+    <div class="az-shelf-head"><h2>${title}</h2>${extra}<a href="${href}" data-link>See more ›</a></div>
+    <div class="az-rail" data-rail>${list.map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : "";
+  const quad = ({ c, items }) => `<div class="az-quad"><h3>${esc(c.name)}</h3><div class="az-q4">${pick4(items).map((p) => `<a href="/products/${p.id}" data-link><div class="az-qimg">${pimg(p)}</div><span>${esc(p.title.split(/[,(|-]/)[0].trim().slice(0, 28))}</span></a>`).join("")}</div><a class="az-more" href="/collections/${c.id}" data-link>See more</a></div>`;
+  // Promo cards (Amazon's tall tiles), built from what's actually live in the store.
+  const tiles = [
+    { cls: "t-blue", eb: "Get what you need fast", h: `Free US delivery over $${FREE_SHIP}`, btn: "Shop now", href: "/collections/all", imgs: (usFast.length ? usFast : best).slice(0, 2) },
+    onSale.length && { cls: "t-violet", eb: "⚡ Flash sale · limited time", h: `Up to ${Math.max(...onSale.map((p) => p.promo.percent))}% off`, timer: flashEnds, href: "/collections/all?sort=deals", imgs: onSale.slice(0, 2) },
+    ...cats.slice(0, 4).map(({ c, items }, i) => ({ cls: ["t-teal", "t-magenta", "t-navy", "t-amber"][i], eb: "Top picks in", h: esc(c.name), href: "/collections/" + c.id, imgs: pick4(items).slice(0, 2) })),
+    { cls: "t-red", eb: CONFIG.live?.status === "live" ? "● On air now" : "Watch & shop", h: "Premium Live", href: "/live", icon: "📺" },
+    { cls: "t-indigo", eb: "Just landed", h: "New arrivals", href: "/collections/all?sort=latest", imgs: fresh.slice(0, 2) },
+    under25.length && { cls: "t-green", eb: "Little prices", h: "Deals under $25", href: "/collections/all?sort=price-asc", imgs: under25.slice(0, 2) },
+    { cls: "t-slate", eb: "See it in action", h: "Premium Video", href: "/videos", icon: "▶" },
+  ].filter(Boolean);
   document.title = "LeeysPremium — Everything you need, delivered fast";
   app.innerHTML = `
-  <section class="hero"><div class="wrap hero-inner">
-    <div><span class="eyebrow">New arrivals every week${maxOff >= 10 ? ` · Up to ${maxOff}% off` : ""}</span>
-      <h1>Everything you need, in one place.</h1>
-      <p>Home, tech, fashion, beauty, outdoors and more — hand-picked, fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
-      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn ghost" href="/categories" data-link>Browse categories</a></div>
-      <div class="hero-ctas" style="margin-top:12px"><a class="btn live-btn ${CONFIG.live?.status === "live" ? "on" : ""}" href="/live" data-link><i></i>Premium Live${CONFIG.live?.status === "live" ? " · now" : ""}</a><a class="btn ghost video-btn" href="/videos" data-link>▶ Premium Video</a></div></div>
-    ${showcaseHTML()}
-  </div></section>
+  <section class="az-hero"><div class="wrap az-hero-wrap">
+    <div class="az-tiles" data-rail>${tiles.map((t) => `<a class="az-tile ${t.cls}" href="${t.href}" data-link>
+      <span class="az-eb">${t.eb}</span><b class="az-h">${t.h}</b>
+      ${t.timer ? `<span class="az-pill">Ends in <b data-ends="${t.timer}">${timeLeft(t.timer)}</b></span>` : t.btn ? `<span class="az-pill">${t.btn}</span>` : ""}
+      <div class="az-tile-art">${t.imgs ? t.imgs.map((p, i) => `<div class="az-ti az-ti${i}">${pimg(p)}</div>`).join("") : `<div class="az-ticon">${t.icon}</div>`}</div></a>`).join("")}</div>
+    <button class="az-arrow l" data-rl="-1" aria-label="Previous">‹</button><button class="az-arrow r" data-rl="1" aria-label="Next">›</button></div></section>
   ${marquee()}
   ${voucherStrip()}
   ${(PROMO.schedules || []).length ? `<section class="vouchers"><div class="wrap"><div class="v-rail">${PROMO.schedules.map((s) => `<a class="sched-card" href="${s.scope === "collection" ? "/collections/" + s.target : "/collections/all"}" data-link>
     <b>📅 ${s.percent}% off</b><span>${esc(s.label)}${s.scope === "collection" ? " · " + esc(COLLECTIONS.find((c) => c.id === s.target)?.name || "") : ""}</span><small>${esc(s.text)}</small></a>`).join("")}</div></div></section>` : ""}
-  ${trust()}
-  ${onSale.length ? `<section class="section"><div class="wrap"><div class="section-head flash-head"><h2>⚡ Flash sale</h2>
-      <div class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></div><a class="link-arrow" href="/collections/all?sort=deals" data-link>See all deals →</a></div>
-    <div class="rail">${onSale.slice(0, 12).map(card).join("")}</div></div></section>` : ""}
-  <section class="section"><div class="wrap"><div class="section-head"><h2>Shop by category</h2><a class="link-arrow" href="/categories" data-link>All categories →</a></div>
-    <div class="coll-grid">${COLLECTIONS.map((c) => `<a class="coll-card" href="/collections/${c.id}" data-link>${collArt(c)}<div class="name">${esc(c.name)}<small>${PRODUCTS.filter((p) => p.collection === c.id).length} products</small></div></a>`).join("")}</div></div></section>
-  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Top picks</h2><a class="link-arrow" href="/collections/all?sort=top" data-link>Shop all →</a></div>
-    <div class="grid">${best.map(card).join("")}</div></div></section>
-  ${offPct(deal) ? `<section class="section" style="padding-top:0"><div class="wrap"><div class="banner">
-    <div class="copy"><span class="eyebrow">${deal.promo ? "⚡ " + esc(deal.promo.label) : "Biggest discount right now"}</span><h2>${esc(deal.title)}</h2><p>Now ${money(deal.price)} — was ${money(deal.compareAt)} (save ${offPct(deal)}%).${deal.promo ? ` Sale ends in <b data-ends="${deal.promo.endsAt}">${timeLeft(deal.promo.endsAt)}</b>.` : ""}</p><a class="btn accent" href="/products/${deal.id}" data-link>Shop the deal</a></div>
-    ${art(deal, 0)}</div></div></section>` : ""}
-  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>New arrivals</h2><a class="link-arrow" href="/collections/all?sort=latest" data-link>See all →</a></div>
-    <div class="rail">${fresh.map(card).join("")}</div></div></section>
-  <section class="section" style="padding-top:0"><div class="wrap"><div class="section-head"><h2>Why shop with LeeysPremium</h2></div>
-    <div class="reviews">${[
-      ["🚚", "Delivery date on every product", "See the estimated arrival before you buy. Many items ship from US warehouses in 3–7 days."],
-      ["🔒", "Safe, secure checkout", "Pay with PayPal or any major card. We never see or store your card number."],
-      ["↩️", "30-day returns", "Changed your mind? Send it back within 30 days of delivery for a refund."],
-    ].map(([i, t, d]) => `<div class="review"><div style="font-size:26px">${i}</div><p style="font-style:normal"><b style="color:#fff">${t}</b><br>${d}</p></div>`).join("")}</div></div></section>`;
+  ${cats.length ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(0, 4).map(quad).join("")}</div></section>` : ""}
+  ${onSale.length ? `<section class="az-shelf"><div class="wrap"><div class="az-band"><h2>⚡ Flash sale</h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
+    <div class="az-panel az-panel-band"><div class="az-rail" data-rail>${onSale.slice(0, 16).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
+  ${shelf("Top picks for you", "/collections/all?sort=top", best)}
+  <section class="az-spot"><div class="wrap"><div class="az-panel az-spot-in">
+    <div class="az-spot-copy"><span class="eyebrow">LeeysPremium spotlight${maxOff >= 10 ? ` · Up to ${maxOff}% off` : ""}</span><h2>Everything you need, in one place.</h2>
+      <p>Home, tech, fashion, beauty, outdoors and more — fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
+      <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn live-btn ${CONFIG.live?.status === "live" ? "on" : ""}" href="/live" data-link><i></i>Premium Live${CONFIG.live?.status === "live" ? " · now" : ""}</a><a class="btn ghost video-btn" href="/videos" data-link>▶ Video</a></div></div>
+    ${showcaseHTML()}</div></div></section>
+  ${shelf("New arrivals", "/collections/all?sort=latest", fresh)}
+  ${cats.length > 4 ? `<section class="az-quads"><div class="wrap az-quad-grid">${cats.slice(4, 8).map(quad).join("")}</div></section>` : ""}
+  ${shelf("Deals under $25", "/collections/all?sort=price-asc", under25)}
+  ${shelf("Fast delivery from US warehouses", "/collections/all", usFast)}
+  ${trust()}`;
+  app.querySelectorAll("[data-rl]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); const r = b.parentElement.querySelector("[data-rail]"); r.scrollBy({ left: Number(b.dataset.rl) * r.clientWidth * 0.85, behavior: "smooth" }); }));
   startShowcase();
   bindVouchers();
 }
