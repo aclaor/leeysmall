@@ -630,3 +630,47 @@ details.acc p { color: var(--ink-2); margin: 10px 0 0; font-size: 15px; }
   .page-head h1, .prose h1 { font-size: 32px; }
 }
 body.vsheet-open #paypal-buttons { visibility: hidden; }
+
+/* Amazon-style checkout (keeps the LeeysPremium theme) */
+.co-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 24px 0 4px; border-bottom: 1px solid var(--line); }
+.co-top h1 { margin: 0; font-size: 26px; color: #fff; }
+.co-top h1 .muted { font-size: 18px; font-weight: 500; }
+.co-secure { font-size: 13px; color: var(--ink-2); }
+.checkout.amz { grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; padding-top: 20px; }
+.co-step { border: 1px solid var(--line); border-radius: 16px; background: rgba(10,16,34,.45); margin-bottom: 16px; overflow: hidden; }
+.co-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.co-head h2 { margin: 0 !important; font-size: 18px !important; flex: 1; }
+.co-n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; background: linear-gradient(135deg, #2f8cff, #1a5fd0); flex: none; }
+.co-change { background: none; border: 0; color: #6fb3ff; font-weight: 600; cursor: pointer; padding: 4px 6px; }
+.co-change:hover { text-decoration: underline; }
+.co-body { padding: 16px 18px; }
+.co-sum { padding: 14px 18px 16px 58px; line-height: 1.55; font-size: 15px; color: var(--ink-2); }
+.co-sum b { color: #fff; }
+.pm-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--blue); border-radius: 12px; background: rgba(47,140,255,.08); margin-bottom: 12px; }
+.pm-row div { display: grid; gap: 2px; font-size: 14px; } .pm-row b { color: #fff; font-size: 15px; } .pm-ico { font-size: 22px; }
+.co-step .vpick { width: 100%; margin: 0; }
+.co-item { padding: 14px 0; border-top: 1px solid var(--line); } .co-item:first-child { border-top: 0; padding-top: 0; }
+.co-arrive { color: #49d79a; font-weight: 700; font-size: 16px; margin-bottom: 10px; }
+.co-irow { display: flex; gap: 14px; align-items: flex-start; }
+.co-irow .thumb { width: 96px; height: 96px; flex: none; border-radius: 12px; overflow: hidden; background: #fff; }
+.co-irow .thumb > div, .co-irow .thumb img { width: 100%; height: 100%; object-fit: contain; }
+.co-iinfo { display: grid; gap: 4px; min-width: 0; }
+.co-iinfo .t { color: #fff; font-weight: 600; font-size: 15px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.co-iinfo .t:hover { text-decoration: underline; }
+.co-iinfo .v { font-size: 13px; color: var(--muted); }
+.co-price { color: #fff; font-size: 17px; }
+.co-qty { display: inline-flex; align-items: center; border: 1px solid var(--line-2); border-radius: 999px; width: max-content; overflow: hidden; margin: 2px 0; }
+.co-qty button { width: 34px; height: 30px; background: rgba(255,255,255,.04); border: 0; color: #fff; font-size: 15px; cursor: pointer; }
+.co-qty button:hover { background: rgba(47,140,255,.2); }
+.co-qty span { min-width: 32px; text-align: center; font-weight: 600; }
+.checkout.amz .co-summary { padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(10,16,34,.6); top: 90px; }
+.checkout.amz #paypal-buttons { margin-top: 0 !important; }
+.co-summary h3 { margin: 14px 0 8px; font-size: 18px; color: #fff; }
+.co-fine { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 10px 0 0; text-align: center; }
+.co-fine a { text-decoration: underline; }
+.checkout.amz .totals { display: grid; gap: 6px; font-size: 14px; }
+.checkout.amz .totals .grand { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 10px; font-size: 19px; font-weight: 800; color: #fff; }
+.co-save { color: #49d79a; font-size: 13px; font-weight: 600; }
+@media (max-width: 900px) { .checkout.amz { grid-template-columns: 1fr; } .checkout.amz .co-summary { position: static; } .co-sum { padding-left: 18px; } }
+@media (max-width: 480px) { .co-irow .thumb { width: 76px; height: 76px; } .co-top h1 { font-size: 22px; } .co-secure { display: none; } }
+@media (max-width: 900px) { .checkout.amz .co-summary { order: 2; } .checkout.amz .co-form { order: 1; } }

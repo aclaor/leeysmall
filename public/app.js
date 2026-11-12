@@ -597,22 +597,44 @@ function checkout() {
   const lines = cart.lines();
   if (!lines.length) return go("/cart", true);
   const V = { code: "", shipCode: "", manual: false, last: null, extra: [] };
-  app.innerHTML = `<div class="wrap"><div class="checkout">
-    <form class="co-form" id="coForm" novalidate><div class="crumbs"><a href="/cart" data-link>Cart</a> / Information / Payment</div>
-      <h2>Contact</h2><div class="field"><input name="email" type="email" required placeholder="Email" autocomplete="email"></div>
-      <label class="muted" style="font-size:14px"><input type="checkbox" name="marketing" checked> Email me with news and offers</label>
-      <h2>Delivery</h2>
-      <div class="field"><select name="country" id="coCountry" autocomplete="country">${COUNTRY_OPTS()}</select></div>
-      <div class="two"><div class="field"><input name="firstName" required placeholder="First name" autocomplete="given-name"></div><div class="field"><input name="lastName" required placeholder="Last name" autocomplete="family-name"></div></div>
-      <div class="field"><input name="address1" required placeholder="Address" autocomplete="address-line1"></div><div class="field"><input name="address2" placeholder="Apartment, suite, etc. (optional)" autocomplete="address-line2"></div>
-      <div class="two"><div class="field"><input name="city" required placeholder="City" autocomplete="address-level2"></div><div class="field"><input name="province" placeholder="State / Province" autocomplete="address-level1"></div></div>
-      <div class="two"><div class="field"><input name="zip" required placeholder="ZIP / Postal code" autocomplete="postal-code"></div><div class="field"><input name="phone" placeholder="Phone (for delivery updates)" autocomplete="tel"></div></div>
-      <h2>Payment</h2><p class="muted" style="margin-top:-6px;font-size:14px">Pay securely with PayPal or any debit/credit card. All transactions are encrypted.</p>
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem("lp_addr") || "{}") || {}; } catch {}
+  const val = (k) => esc(saved[k] || "");
+  app.innerHTML = `<div class="wrap"><div class="co-top"><h1>Checkout <span class="muted" id="coCount"></span></h1><span class="co-secure">🔒 Secure checkout</span></div><div class="checkout amz">
+    <form class="co-form" id="coForm" novalidate>
+      <section class="co-step"><div class="co-head"><span class="co-n">1</span><h2>Delivery address</h2><button type="button" class="co-change" id="ch1" hidden>Change</button></div>
+        <div class="co-sum" id="addrSum" hidden></div>
+        <div class="co-body" id="addrForm">
+          <div class="field"><input name="email" type="email" required placeholder="Email (for your receipt and tracking)" autocomplete="email" value="${val("email")}"></div>
+          <div class="field"><select name="country" id="coCountry" autocomplete="country">${COUNTRY_OPTS()}</select></div>
+          <div class="two"><div class="field"><input name="firstName" required placeholder="First name" autocomplete="given-name" value="${val("firstName")}"></div><div class="field"><input name="lastName" required placeholder="Last name" autocomplete="family-name" value="${val("lastName")}"></div></div>
+          <div class="field"><input name="address1" required placeholder="Street address" autocomplete="address-line1" value="${val("address1")}"></div><div class="field"><input name="address2" placeholder="Apartment, suite, unit, building (optional)" autocomplete="address-line2" value="${val("address2")}"></div>
+          <div class="two"><div class="field"><input name="city" required placeholder="City" autocomplete="address-level2" value="${val("city")}"></div><div class="field"><input name="province" placeholder="State / Province" autocomplete="address-level1" value="${val("province")}"></div></div>
+          <div class="two"><div class="field"><input name="zip" required placeholder="ZIP / Postal code" autocomplete="postal-code" value="${val("zip")}"></div><div class="field"><input name="phone" placeholder="Phone (for delivery updates)" autocomplete="tel" value="${val("phone")}"></div></div>
+          <label class="muted" style="font-size:14px;display:block;margin:2px 0 14px"><input type="checkbox" name="marketing" checked> Email me with news and offers</label>
+          <button type="button" class="btn accent" id="useAddr">Use this address</button>
+        </div></section>
+      <section class="co-step"><div class="co-head"><span class="co-n">2</span><h2>Payment method</h2></div>
+        <div class="co-body"><div class="pm-row"><span class="pm-ico">💳</span><div><b>PayPal, debit or credit card</b><span class="muted">Pay with the button in your order summary. Card details are handled by PayPal and never stored by us.</span></div></div>
+          <button type="button" class="vpick" id="vpick"><span>🎟 <b>Vouchers & promotional codes</b></span><span id="vpickSel" class="muted">Select or enter code ›</span></button></div></section>
+      <section class="co-step"><div class="co-head"><span class="co-n">3</span><h2>Review items and delivery</h2></div><div class="co-body" id="coItems"></div></section>
       <div id="coError" class="note err" hidden></div>
-      <div id="paypal-buttons" style="margin-top:14px;min-height:50px"></div></form>
-    <div class="co-summary">${lines.map((l) => `<div class="line"><div class="thumb"><div>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</div><span class="q">${l.qty}</span></div><div><div class="t">${esc(l.p.title)}</div><div class="v">${esc(l.variant || "")}</div></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
-      <button type="button" class="vpick" id="vpick"><span>🎟 <b>LeeysPremium Vouchers</b></span><span id="vpickSel" class="muted">Select or enter code ›</span></button>
-      <div class="totals" id="totals"></div></div></div></div>`;
+    </form>
+    <aside class="co-summary"><div id="paypal-buttons" style="min-height:50px"></div>
+      <p class="co-fine">By placing your order, you agree to LeeysPremium's <a href="/pages/privacy" data-link>privacy notice</a> and <a href="/pages/terms" data-link>terms of service</a>.</p>
+      <h3>Order Summary</h3><div class="totals" id="totals"></div>
+      <p class="co-fine">🔁 30-day easy returns · 📦 Tracking on every order</p></aside></div></div>`;
+  if (saved.country) $("#coCountry").value = saved.country;
+  const renderItems = () => {
+    const ls = cart.lines(), n = ls.reduce((t, l) => t + l.qty, 0), c = $("#coCountry").value;
+    if (!ls.length) return go("/cart", true);
+    $("#coCount").textContent = `(${n} item${n === 1 ? "" : "s"})`;
+    $("#coItems").innerHTML = ls.map((l) => `<div class="co-item"><div class="co-arrive">${esc(deliveryText(l.p, c))}</div>
+      <div class="co-irow"><div class="thumb"><div>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</div></div>
+        <div class="co-iinfo"><a class="t" href="/products/${l.p.id}" data-link>${esc(l.p.title)}</a>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<b class="co-price">${money(l.p.price)}</b>
+          <div class="co-qty"><button type="button" data-cq="${esc(l.key)}" data-d="-1" aria-label="Decrease">${l.qty === 1 ? "🗑" : "−"}</button><span>${l.qty}</span><button type="button" data-cq="${esc(l.key)}" data-d="1" aria-label="Increase">+</button></div>
+          <div class="muted" style="font-size:13px">${l.p.ships === "us" && c === "US" ? "Ships from a US warehouse" : "Standard shipping with tracking"}</div></div></div></div>`).join("");
+  };
+  renderItems();
   const form = $("#coForm"), err = (m) => { const e = $("#coError"); e.textContent = m || ""; e.hidden = !m; };
   const items = () => cart.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
   const quote = async () => {
@@ -621,23 +643,35 @@ function checkout() {
       V.last = q;
       if (!V.manual && !V.autoDone) { V.autoDone = true; const best = bestVouchers(q); if (best.code !== V.code || best.shipCode !== V.shipCode) { Object.assign(V, best); return quote(); } }
       $("#vpickSel").innerHTML = [q.shipCode && `<span class="vtag ship">${esc(q.shipCode)}</span>`, q.code && `<span class="vtag">${esc(q.code)}</span>`].filter(Boolean).join(" ") || "Select or enter code ›";
-      $("#totals").innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(q.subtotal)}</span></div>
+      const n = cart.items.reduce((t, l) => t + l.qty, 0);
+      $("#totals").innerHTML = `<div class="row-between"><span>Items (${n}):</span><span>${money(q.subtotal)}</span></div>
         ${q.discount ? `<div class="row-between"><span>Voucher (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
         ${q.codeNote ? `<div class="muted" style="font-size:13px">🎟 ${esc(q.codeNote)}</div>` : ""}
         ${(q.gifts || []).map((g) => `<div class="row-between"><span>🎁 ${esc(g.title)}${g.qty > 1 ? " × " + g.qty : ""}</span><span class="free">FREE</span></div>`).join("")}
-        <div class="row-between"><span>Shipping</span><span>${q.shipping ? money(q.shipping) : "Free"}</span></div>
+        <div class="row-between"><span>Shipping & handling:</span><span>${q.shipping ? money(q.shipping) : "FREE"}</span></div>
         ${q.shipDiscount ? `<div class="row-between"><span>Shipping voucher (${esc(q.shipCode)})</span><span>−${money(q.shipDiscount)}</span></div>` : ""}
-        <div class="row-between grand"><span>Total</span><span>USD ${money(q.total)}</span></div>`;
+        <div class="row-between grand"><span>Order total:</span><span>${money(q.total)}</span></div>
+        ${q.discount + (q.shipDiscount || 0) > 0 ? `<div class="co-save">You save ${money(q.discount + (q.shipDiscount || 0))} on this order</div>` : ""}`;
       err("");
     } catch (e) { err(e.message); }
   };
   quote();
-  form.country.onchange = quote;
+  const addr = () => { const f = form; return { email: f.email.value.trim(), country: f.country.value, firstName: f.firstName.value.trim(), lastName: f.lastName.value.trim(), address1: f.address1.value.trim(), address2: f.address2.value.trim(), city: f.city.value.trim(), province: f.province.value.trim(), zip: f.zip.value.trim(), phone: f.phone.value.trim() }; };
+  const showAddr = (open) => {
+    $("#addrForm").hidden = !open; $("#addrSum").hidden = open; $("#ch1").hidden = open;
+    if (!open) { const a = addr(), cn = $("#coCountry").selectedOptions[0]?.textContent || a.country;
+      $("#addrSum").innerHTML = `<b>${esc(a.firstName + " " + a.lastName)}</b><br>${esc(a.address1)}${a.address2 ? ", " + esc(a.address2) : ""}<br>${esc([a.city, a.province, a.zip].filter(Boolean).join(", "))}<br>${esc(cn)}${a.phone ? "<br>Phone: " + esc(a.phone) : ""}<div class="muted" style="margin-top:4px">${esc(a.email)}</div>`; }
+  };
+  $("#useAddr").onclick = () => { if (!valid()) return; try { localStorage.setItem("lp_addr", JSON.stringify(addr())); } catch {} showAddr(false); };
+  $("#ch1").onclick = () => showAddr(true);
+  if (saved.address1 && saved.email) showAddr(false);
+  $("#coItems").onclick = (e) => { const b = e.target.closest("[data-cq]"); if (!b) return; const l = cart.items.find((x) => x.key === b.dataset.cq); if (!l) return; cart.set(l.key, l.qty + Number(b.dataset.d)); renderItems(); quote(); };
+  form.country.onchange = () => { renderItems(); quote(); };
   form.email.addEventListener("change", quote);
   $("#vpick").onclick = () => voucherSheet(V, () => quote());
   const valid = () => {
-    for (const el of form.querySelectorAll("[required]")) if (!el.value.trim()) { el.focus(); err("Please fill in " + el.placeholder.toLowerCase() + "."); return false; }
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.value)) { form.email.focus(); err("Please enter a valid email."); return false; }
+    for (const el of form.querySelectorAll("[required]")) if (!el.value.trim()) { showAddr(true); el.focus(); err("Please fill in " + el.placeholder.toLowerCase().replace(/ \(.*\)/, "") + "."); return false; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.value.trim())) { showAddr(true); form.email.focus(); err("Please enter a valid email."); return false; }
     err(""); return true;
   };
   form.onsubmit = (e) => e.preventDefault();
