@@ -311,6 +311,8 @@ function voucherSheet(V, done) {
   let sel = { code: V.code, shipCode: V.shipCode };
   const all = () => [...PROMO.vouchers, ...V.extra.filter((x) => !PROMO.vouchers.some((v) => v.code === x.code))];
   const ov = document.createElement("div"); ov.className = "vsheet-bg";
+  document.body.classList.add("vsheet-open");
+  ov.remove = function () { document.body.classList.remove("vsheet-open"); Element.prototype.remove.call(this); };
   const row = (v) => { const r = vCheck(v, q), key = v.type === "shipping" ? "shipCode" : "code", on = sel[key] === v.code;
     return `<button class="vrow ${v.type} ${r.ok ? "" : "off"} ${on ? "on" : ""}" data-vc="${esc(v.code)}" data-vk="${key}" ${r.ok ? "" : "disabled"}>
       <div class="vrow-left">${vLeft(v)}</div><div class="vrow-mid"><b>${esc(v.label || v.title)}</b><span>${esc(vSub(v))}</span>${r.ok ? `<small>Save ${money(r.amount)}</small>` : `<small class="why">${esc(r.reason)}</small>`}</div>

@@ -152,7 +152,7 @@ h4 { font-family: var(--head); font-weight: 600; letter-spacing: .02em; }
 .vpick b { color: #fff; } .vpick:hover { background: rgba(255,92,122,.12); }
 .vtag { display: inline-block; padding: 3px 9px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #ff5c7a, #e11d48); }
 .vtag.ship { background: linear-gradient(135deg, #20c997, #0f8f6f); }
-.vsheet-bg { position: fixed; inset: 0; z-index: 95; background: rgba(2,4,10,.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 16px; }
+.vsheet-bg { position: fixed; inset: 0; z-index: 2147483000; background: rgba(2,4,10,.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 16px; }
 .vsheet { width: min(520px, 100%); max-height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; border-radius: 22px; overflow: hidden;
   background: rgba(8,13,28,.97); border: 1px solid var(--line-2); box-shadow: var(--shadow), 0 0 60px rgba(47,140,255,.2); animation: pillIn .3s ease; }
 .vsheet header { display: grid; grid-template-columns: 42px 1fr 42px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: center; }
@@ -629,3 +629,4 @@ details.acc p { color: var(--ink-2); margin: 10px 0 0; font-size: 15px; }
   .mq-track a, .mq-track span { padding: 11px 18px; font-size: 12.5px; }
   .page-head h1, .prose h1 { font-size: 32px; }
 }
+body.vsheet-open #paypal-buttons { visibility: hidden; }
