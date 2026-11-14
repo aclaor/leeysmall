@@ -32,7 +32,7 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
@@ -45,9 +45,43 @@ window.addEventListener("hashchange", () => { const t = location.hash.slice(1); 
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, orders, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, insights, orders, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
+
+/* ---------- Insights: what visitors look at (anonymous daily counts) ---------- */
+let insDays = 7;
+async function insights() {
+  const [d, prods, offer] = await Promise.all([api("/api/admin/insights?days=" + insDays), api("/api/admin/products"), api("/api/admin/cart-offer")]);
+  const by = (k) => d.rows.filter((r) => r.kind === k), tot = (k) => by(k).reduce((t, r) => t + r.n, 0);
+  const pv = new Map(by("product").map((r) => [r.target, r.n])), pc = new Map(by("cart").map((r) => [r.target, r.n]));
+  const visits = tot("visit"), views = tot("product"), carts = tot("cart"), checks = tot("checkout"), paidN = d.paid?.c || 0;
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0) + "%";
+  const step = (label, n, prev, hint) => `<div class="ins-step"><span>${label}</span><b>${n.toLocaleString()}</b>${prev != null ? `<small>${pct(n, prev)} of previous step</small>` : `<small>${hint || ""}</small>`}</div>`;
+  const prodRows = [...new Set([...pv.keys(), ...pc.keys()])].map((id) => ({ id, p: prods.find((x) => x.id === id), v: pv.get(id) || 0, c: pc.get(id) || 0 })).filter((r) => r.p).sort((a, b) => b.v - a.v || b.c - a.c).slice(0, 40);
+  const catName = (id) => id === "all" ? "All products" : collections.find((c) => c.id === id)?.name || id;
+  const searchHits = (q) => prods.filter((p) => p.active && q.split(/\s+/).every((w) => (p.title + " " + (p.description || "")).toLowerCase().includes(w))).length;
+  const days = []; for (let i = d.days - 1; i >= 0; i--) days.push(new Date(Date.now() - i * 864e5).toISOString().slice(0, 10));
+  const dv = (day, k) => d.daily.filter((x) => x.day === day && x.kind === k).reduce((t, x) => t + x.n, 0), maxV = Math.max(1, ...days.map((x) => dv(x, "visit")));
+  const advice = (r) => r.v >= 10 && !r.c ? `<span class="ins-tag warn">Many views, no carts — check price, photos, shipping time</span>` : r.v >= 5 && r.c / r.v >= 0.1 ? `<span class="ins-tag good">Popular — feature it on the homepage</span>` : "";
+  main().innerHTML = `<div class="row-between" style="flex-wrap:wrap;gap:10px"><h1 style="margin:0">Insights</h1><div class="flex" style="gap:6px">${[1, 7, 30, 90].map((n) => `<button class="chip ${insDays === n ? "on" : ""}" data-days="${n}">${n === 1 ? "Today" : n + " days"}</button>`).join("")}</div></div>
+    <p class="muted" style="margin:6px 0 16px">What shoppers do on your store. Counts are anonymous (no names, emails or IP addresses), and each visitor counts once per product per visit. Tracking started when this page was added, so older visits aren't included.</p>
+    <div class="ins-funnel">${step("Visitors", visits, null, "Store visits")}${step("Product views", views, null, visits ? (views / visits).toFixed(1) + " products per visit" : "")}${step("Added to cart", carts, views)}${step("Reached checkout", checks, carts)}${step("Paid orders", paidN, checks)}</div>
+    ${paidN ? `<p class="muted" style="margin:6px 0 0">Revenue in this period: <b style="color:#fff">${money(d.paid.t)}</b></p>` : ""}
+    ${visits ? `<div class="panel"><b>Daily visitors</b><div class="ins-bars">${days.map((x) => `<div title="${x}: ${dv(x, "visit")} visitors, ${dv(x, "cart")} carts"><i style="height:${Math.round((dv(x, "visit") / maxV) * 100)}%"></i><span>${d.days <= 31 ? x.slice(8) : ""}</span></div>`).join("")}</div></div>` : ""}
+    <div class="panel"><b>🛍 Products visitors looked at</b><p class="muted" style="font-size:13px;margin:4px 0 12px">Products with lots of views but no carts are the ones to improve: better photos or a video, a lower price, a clearer title, or faster shipping.</p>
+      ${prodRows.length ? `<div class="tbl-wrap"><table><tr><th>Product</th><th>Price</th><th>Views</th><th>Added to cart</th><th>Cart rate</th><th></th></tr>${prodRows.map((r) => `<tr><td><div class="flex" style="gap:10px">${thumb(r.p)}<div><a href="/products/${r.id}" target="_blank" style="color:#fff">${esc(r.p.title.slice(0, 60))}</a><div>${advice(r)}</div></div></div></td>
+        <td>${money(r.p.price)}</td><td><b>${r.v}</b></td><td>${r.c}</td><td>${r.v ? pct(r.c, r.v) : "—"}</td><td><button class="btn sm ghost" data-edit-ins="${r.id}">Edit</button></td></tr>`).join("")}</table></div>` : `<p class="muted">No product views yet — they'll appear here as visitors browse.</p>`}</div>
+    <div class="grid-2"><div class="panel"><b>📂 Categories visited</b>${by("category").length ? `<table style="margin-top:10px">${by("category").slice(0, 15).map((r) => `<tr><td>${esc(catName(r.target))}</td><td style="text-align:right"><b>${r.n}</b></td></tr>`).join("")}</table>` : `<p class="muted">No category visits yet.</p>`}</div>
+      <div class="panel"><b>🔎 What visitors searched for</b>${by("search").length ? `<table style="margin-top:10px">${by("search").slice(0, 20).map((r) => { const h = searchHits(r.target); return `<tr><td>“${esc(r.target)}”${h ? "" : ` <span class="ins-tag warn">0 results — import these products</span>`}</td><td style="text-align:right"><b>${r.n}</b></td></tr>`; }).join("")}</table>` : `<p class="muted">No searches yet. Searches that find nothing show here, so you know what to import.</p>`}</div></div>
+    <div class="panel" id="offerPanel"><b>🎉 Add-to-cart offer</b><p class="muted" style="font-size:13px;margin:4px 0 12px">The first time a shopper adds something to their cart, a popup offers a discount, and it's applied automatically at checkout. It's a one-time welcome offer per shopper.</p>
+      <div class="flex" style="gap:12px;flex-wrap:wrap;align-items:center"><label class="flex" style="gap:8px"><input type="checkbox" id="ofOn" ${offer.on ? "checked" : ""}> Offer is on</label>
+        <label class="flex" style="gap:6px">Discount <input class="inp" id="ofPct" type="number" min="1" max="80" value="${offer.percent}" style="width:80px"> %</label>
+        <label class="flex" style="gap:6px">Code <input class="inp" id="ofCode" value="${esc(offer.code)}" style="width:130px"></label><button class="btn sm" id="ofSave">Save</button></div></div>`;
+  main().querySelectorAll("[data-days]").forEach((b) => (b.onclick = () => { insDays = Number(b.dataset.days); insights(); }));
+  main().querySelectorAll("[data-edit-ins]").forEach((b) => (b.onclick = () => productModal(prods.find((p) => p.id === b.dataset.editIns))));
+  $("#ofSave").onclick = async () => { try { await api("/api/admin/cart-offer", "PUT", { on: $("#ofOn").checked, percent: Number($("#ofPct").value), code: $("#ofCode").value }); toast("Offer saved"); } catch (e) { toast(e.message); } };
+}
 
 /* ---------- Dashboard ---------- */
 async function dashboard() {

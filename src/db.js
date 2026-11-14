@@ -33,6 +33,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS promos (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, percent REAL NOT NULL, scope TEXT NOT NULL DEFAULT 'all', target TEXT,
     starts_at TEXT DEFAULT (datetime('now')), ends_at TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chats_last ON chats(last_at)`,
+  `CREATE TABLE IF NOT EXISTS stats (day TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, n INTEGER DEFAULT 0, PRIMARY KEY (day, kind, target))`,
 ];
 
 let ready = null;

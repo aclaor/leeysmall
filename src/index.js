@@ -168,6 +168,18 @@ async function handle(req, env, ctx) {
   ctx.waitUntil(caches.default.put(key, out.clone()));
   return out;
 }
+// Add-to-cart offer: a hidden voucher (default CART10, 10% off) shown to shoppers the first time they add to cart.
+async function cartOffer(env) {
+  const o = { on: true, percent: 10, code: "CART10", ...(parse(await getSetting(env, "cart_offer"), {}) || {}) };
+  if (o.on && !offerReady) { offerReady = true; try { await env.DB.prepare("INSERT OR IGNORE INTO discounts (code, percent, type, active, show, label, scope) VALUES (?,?,'percent',1,0,?,'all')").bind(o.code, o.percent, `${o.percent}% off your order`).run(); } catch { offerReady = false; } }
+  return o.on ? { code: o.code, percent: o.percent } : null;
+}
+let offerReady = false;
+async function ensureCartOfferVoucher(env, o) {
+  await env.DB.prepare(`INSERT INTO discounts (code, percent, type, active, show, label, scope) VALUES (?,?, 'percent', ?, 0, ?, 'all')
+    ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, active=excluded.active, label=excluded.label`).bind(o.code, o.percent, o.on ? 1 : 0, `${o.percent}% off your order`).run();
+}
+const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "checkout", "buy"]);
 const bustCache = (env) => setSetting(env, "cache_v", String(Date.now())).catch(() => {});
 async function handleRoutes(req, env, ctx) {
   const url = new URL(req.url), path = url.pathname, m = req.method;
@@ -177,7 +189,7 @@ async function handleRoutes(req, env, ctx) {
   await ensureSchema(env);
 
   if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES, country: req.cf?.country || "US",
-    heroSlides: parse(await getSetting(env, "hero_slides"), []), homeTiles: parse(await getSetting(env, "home_tiles"), {}) || {}, live: (({ status, title }) => ({ status: status || "off", title: title || "" }))(parse(await getSetting(env, "live"), {}) || {}) });
+    heroSlides: parse(await getSetting(env, "hero_slides"), []), homeTiles: parse(await getSetting(env, "home_tiles"), {}) || {}, cartOffer: await cartOffer(env), live: (({ status, title }) => ({ status: status || "off", title: title || "" }))(parse(await getSetting(env, "live"), {}) || {}) });
 
   if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb,cover FROM collections ORDER BY sort").all()).results);
   if (path === "/api/products") {
@@ -265,6 +277,15 @@ async function handleRoutes(req, env, ctx) {
     if (!r.ok && !r.short) return bad(r.reason, 400);
     const { active, uses, max_uses, ...pub } = d;
     return json({ ...pub, scope: d.scope || "all", target: d.scope === "products" ? parse(d.target, []) : d.target, title: voucherTitle(d) });
+  }
+  if (path === "/api/track" && m === "POST") { // anonymous visitor counts per day (no personal data stored)
+    try {
+      const b = await body(req), day = new Date().toISOString().slice(0, 10);
+      const evs = (Array.isArray(b.e) ? b.e : [b]).slice(0, 10).filter((x) => x && TRACK_KINDS.has(x.k));
+      if (evs.length) await env.DB.batch(evs.map((x) => env.DB.prepare("INSERT INTO stats (day,kind,target,n) VALUES (?,?,?,1) ON CONFLICT(day,kind,target) DO UPDATE SET n=n+1")
+        .bind(day, x.k, str(x.t || "-", 80).toLowerCase())));
+    } catch {}
+    return new Response(null, { status: 204 });
   }
   if (path === "/api/quote" && m === "POST") {
     try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, shipDiscount: o.shipDiscount, shipCode: o.shipCode, codeNote: o.codeNote, shipping: o.shipping, total: o.total,
@@ -413,6 +434,20 @@ async function admin(req, env, ctx, path, m, url) {
     const rules = ((await body(req)).rules || []).map((r) => ({ kw: str(r.kw, 60).toLowerCase(), cat: str(r.cat, 40) })).filter((r) => r.kw && r.cat).slice(0, 200);
     await setSetting(env, "cat_rules", JSON.stringify(rules));
     return json(rules);
+  }
+  if (path === "/api/admin/cart-offer" && m === "GET") return json({ on: true, percent: 10, code: "CART10", ...(parse(await getSetting(env, "cart_offer"), {}) || {}) });
+  if (path === "/api/admin/cart-offer" && m === "PUT") {
+    const b = await body(req), o = { on: !!b.on, percent: Math.min(80, Math.max(1, Number(b.percent) || 10)), code: (str(b.code, 30) || "CART10").toUpperCase().replace(/[^A-Z0-9]/g, "") || "CART10" };
+    await setSetting(env, "cart_offer", JSON.stringify(o)); await ensureCartOfferVoucher(env, o);
+    return json(o);
+  }
+  if (path === "/api/admin/insights" && m === "GET") {
+    const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || 7));
+    const since = new Date(Date.now() - (days - 1) * 864e5).toISOString().slice(0, 10);
+    const rows = (await env.DB.prepare("SELECT kind, target, SUM(n) n FROM stats WHERE day>=? GROUP BY kind, target ORDER BY n DESC").bind(since).all()).results;
+    const daily = (await env.DB.prepare("SELECT day, kind, SUM(n) n FROM stats WHERE day>=? AND kind IN ('visit','product','cart','checkout','buy') GROUP BY day, kind ORDER BY day").bind(since).all()).results;
+    const paid = await env.DB.prepare("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM orders WHERE paid_at IS NOT NULL AND paid_at>=?").bind(since).first();
+    return json({ days, rows, daily, paid });
   }
   if (path === "/api/admin/tiles" && m === "PUT") { // homepage promo tiles: { key, ids } (up to 2 products per tile; [] = automatic)
     const b = await body(req), key = str(b.key, 80);

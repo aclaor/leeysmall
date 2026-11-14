@@ -879,3 +879,18 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .rc-cat { display: block; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #6fb3ff; margin-bottom: 1px; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rc-cat:hover { color: #ffb347; text-decoration: underline; }
 .card .rc-cat { margin: 8px 0 -2px; }
+
+/* Add-to-cart offer popup */
+.offer-bg { position: fixed; inset: 0; z-index: 2147483100; background: rgba(2,4,12,.7); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 16px; animation: offIn .2s ease; }
+.offer { position: relative; width: min(380px, 100%); text-align: center; padding: 28px 24px 22px; border-radius: 22px; border: 1px solid rgba(255,210,63,.45);
+  background: radial-gradient(420px 220px at 50% 0%, rgba(255,180,60,.28), transparent 70%), linear-gradient(180deg, #111a33, #070b18); box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 40px rgba(255,180,60,.18); animation: offPop .35s cubic-bezier(.2,1.4,.4,1); }
+.offer-x { position: absolute; right: 12px; top: 10px; background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; }
+.offer-burst { font-size: 44px; line-height: 1; }
+.offer-eb { display: block; margin-top: 8px; color: var(--ink-2); font-size: 14px; text-transform: uppercase; letter-spacing: .12em; }
+.offer-big { font-size: 52px; font-weight: 900; line-height: 1.05; background: linear-gradient(90deg, #ffd23f, #ff8a3d); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.offer p { color: var(--ink-2); margin: 6px 0 14px; font-size: 14px; }
+.offer-code { display: inline-block; border: 1px dashed rgba(255,210,63,.6); border-radius: 10px; padding: 6px 14px; margin-bottom: 16px; color: var(--ink-2); font-size: 13px; }
+.offer-code b { color: #ffd23f; letter-spacing: .08em; font-size: 15px; }
+.offer .btn.block { margin-top: 8px; }
+.offer-strip { margin: 0 18px 8px; padding: 8px 12px; border-radius: 10px; background: rgba(255,210,63,.1); border: 1px solid rgba(255,210,63,.35); color: #ffe08a; font-size: 13px; }
+@keyframes offIn { from { opacity: 0; } } @keyframes offPop { from { transform: scale(.85); opacity: 0; } }

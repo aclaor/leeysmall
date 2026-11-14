@@ -69,13 +69,40 @@ const cart = {
     const key = id + "|" + (variant || "");
     const line = this.items.find((l) => l.key === key);
     if (line) line.qty += qty; else this.items.push({ key, id, variant, qty });
-    this.save();
+    this.save(); trk("cart", id); setTimeout(cartOfferPopup, 450);
   },
   set(key, qty) { const l = this.items.find((x) => x.key === key); if (!l) return; l.qty = Math.max(0, qty); this.items = this.items.filter((x) => x.qty > 0); this.save(); },
   lines() { return this.items.map((l) => ({ ...l, p: PRODUCTS.find((p) => p.id === l.id) })).filter((l) => l.p); },
   subtotal() { return this.lines().reduce((s, l) => s + l.p.price * l.qty, 0); },
   count() { return this.items.reduce((s, l) => s + l.qty, 0); },
 };
+/* ---------- Visitor insights (anonymous daily counts) + add-to-cart offer ---------- */
+const TQ = [];
+function trk(k, t = "-") {
+  try { const key = "lp_t_" + k + ":" + t; if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch {}
+  TQ.push({ k, t: String(t).slice(0, 80) });
+  clearTimeout(trk.tm); trk.tm = setTimeout(flushTrack, 250);
+}
+function flushTrack() {
+  if (!TQ.length) return; const data = JSON.stringify({ e: TQ.splice(0, 10) });
+  try { if (!(navigator.sendBeacon && navigator.sendBeacon("/api/track", new Blob([data], { type: "application/json" })))) fetch("/api/track", { method: "POST", body: data, headers: { "content-type": "application/json" }, keepalive: true }); } catch {}
+  if (TQ.length) flushTrack();
+}
+addEventListener("pagehide", flushTrack); document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushTrack());
+const offerCode = () => { try { return CONFIG.cartOffer && localStorage.getItem("lp_offer") === CONFIG.cartOffer.code ? CONFIG.cartOffer.code : ""; } catch { return ""; } };
+function cartOfferPopup() {
+  const o = CONFIG.cartOffer; if (!o) return;
+  try { if (localStorage.getItem("lp_offer") === o.code) return; localStorage.setItem("lp_offer", o.code); } catch { return; }
+  const m = document.createElement("div"); m.className = "offer-bg";
+  m.innerHTML = `<div class="offer" role="dialog" aria-label="Discount unlocked"><button class="offer-x" aria-label="Close">✕</button>
+    <div class="offer-burst">🎉</div><span class="offer-eb">You unlocked</span><div class="offer-big">${o.percent}% OFF</div><p>your order — we've added it for you. It applies automatically at checkout.</p>
+    <div class="offer-code">Code <b>${esc(o.code)}</b></div>
+    <a class="btn accent block" href="/checkout" data-link data-offgo>Checkout now & save ${o.percent}%</a><button class="btn ghost block" data-offclose>Keep shopping</button></div>`;
+  document.body.appendChild(m);
+  const close = () => m.remove();
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x,[data-offclose],[data-offgo]")) close(); };
+  if ($("#drawer") && !$("#drawer").hidden) renderDrawer();
+}
 function updateCount() { const n = cart.count(), el = $("#cartCount"); el.textContent = n; el.classList.toggle("zero", n === 0); }
 
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), 2200); }
@@ -89,7 +116,7 @@ function qtyCtl(key, q) { return `<div class="qty"><button data-q="${key}" data-
 function renderDrawer() {
   const d = $("#drawer"), lines = cart.lines(), sub = cart.subtotal();
   d.innerHTML = `<div class="drawer-head"><h3>Your cart (${cart.count()})</h3><button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
-  ${lines.length ? shipProgress(sub) + `<div class="drawer-items">${lines.map((l) => `
+  ${lines.length ? shipProgress(sub) + (offerCode() ? `<div class="offer-strip">🎉 <b>${CONFIG.cartOffer.percent}% off</b> applied at checkout · code ${esc(offerCode())}</div>` : "") + `<div class="drawer-items">${lines.map((l) => `
     <div class="line"><a class="thumb" href="/products/${l.id}" data-link>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</a>
       <div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div>
       <b>${money(l.p.price * l.qty)}</b></div>`).join("")}${giftRows(cartGifts(lines))}</div>
@@ -438,6 +465,7 @@ function rcard(p) {
 function collection(id, params) {
   const c = COLLECTIONS.find((x) => x.id === id);
   const qRaw = params.get("q") || "", q = qRaw.toLowerCase().trim();
+  if (q) trk("search", q); else trk("category", id);
   const words = q.split(/\s+/).filter(Boolean);
   let base = id === "all" || q ? [...PRODUCTS] : PRODUCTS.filter((p) => p.collection === id);
   if (q) base = base.filter((p) => { const t = (p.title + " " + (p.description || "") + " " + (COLLECTIONS.find((x) => x.id === p.collection)?.name || "")).toLowerCase(); return words.every((w) => t.includes(w)); });
@@ -643,6 +671,7 @@ function deliveryText(p, country) {
 }
 
 function product(id) {
+  trk("product", id);
   const p = PRODUCTS.find((x) => x.id === id);
   if (!p) return notFound();
   document.title = p.title + " — LeeysPremium";
@@ -743,7 +772,7 @@ async function api(path, data) {
 }
 
 function checkout() {
-  document.title = "Checkout — LeeysPremium";
+  document.title = "Checkout — LeeysPremium"; trk("checkout");
   let buy = null;
   if (new URLSearchParams(location.search).get("buy")) try { buy = JSON.parse(sessionStorage.getItem("lp_buynow") || "null"); } catch {}
   const bag = buy && buy.length ? {
@@ -796,7 +825,9 @@ function checkout() {
   const items = () => bag.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
   const quote = async () => {
     try {
+      if (!V.offerTried && offerCode()) { V.offerTried = true; try { const v = await api("/api/discount", { code: offerCode() }); if (!V.extra.some((x) => x.code === v.code)) V.extra.push(v); } catch {} }
       const q = await api("/api/quote", { items: items(), code: V.code, shipCode: V.shipCode, country: form.country.value, email: form.email.value });
+      q.extraVouchers = [...(q.extraVouchers || []), ...V.extra];
       V.last = q;
       if (!V.manual && !V.autoDone) { V.autoDone = true; const best = bestVouchers(q); if (best.code !== V.code || best.shipCode !== V.shipCode) { Object.assign(V, best); return quote(); } }
       $("#vpickSel").innerHTML = [q.shipCode && `<span class="vtag ship">${esc(q.shipCode)}</span>`, q.code && `<span class="vtag">${esc(q.code)}</span>`].filter(Boolean).join(" ") || "Select or enter code ›";
@@ -845,7 +876,7 @@ function checkout() {
         localId = r.orderId; return r.paypalOrderId;
       },
       onApprove: async () => {
-        try { const r = await api("/api/checkout/capture", { orderId: localId }); if (bag === cart) { cart.items = []; cart.save(); } else { try { sessionStorage.removeItem("lp_buynow"); } catch {} } go("/thank-you?order=" + encodeURIComponent(r.orderId)); }
+        try { const r = await api("/api/checkout/capture", { orderId: localId }); if (bag === cart) { cart.items = []; cart.save(); } else { try { sessionStorage.removeItem("lp_buynow"); } catch {} } trk("buy"); go("/thank-you?order=" + encodeURIComponent(r.orderId)); }
         catch (e) { err(e.message + ". You have not been charged — please try again."); }
       },
       onError: () => err("Payment couldn't be completed. Please try again or use another method."),
@@ -958,7 +989,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
   $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 2).map(link).join("");
   $("#mobileNav").innerHTML = links + `<a href="/track" data-link>Track order</a>`;
   $("#footerCollections").innerHTML = links;
-  updateCount(); route();
+  updateCount(); trk("visit"); route();
 })();
 
 /* ---------- Installable app (PWA) ---------- */
