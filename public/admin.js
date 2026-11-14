@@ -54,12 +54,15 @@ let insDays = 7;
 async function insights() {
   const [d, prods, offer] = await Promise.all([api("/api/admin/insights?days=" + insDays), api("/api/admin/products"), api("/api/admin/cart-offer")]);
   const by = (k) => d.rows.filter((r) => r.kind === k), tot = (k) => by(k).reduce((t, r) => t + r.n, 0);
-  const pv = new Map(by("product").map((r) => [r.target, r.n])), pc = new Map(by("cart").map((r) => [r.target, r.n]));
+  // ids are matched case-insensitively (early counts were saved in lowercase)
+  const idOf = new Map(prods.map((p) => [p.id.toLowerCase(), p.id]));
+  const sumBy = (k) => { const m = new Map(); by(k).forEach((r) => { const id = idOf.get(String(r.target).toLowerCase()); if (id) m.set(id, (m.get(id) || 0) + r.n); }); return m; };
+  const pv = sumBy("product"), pc = sumBy("cart");
   const visits = tot("visit"), views = tot("product"), carts = tot("cart"), checks = tot("checkout"), paidN = d.paid?.c || 0;
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0) + "%";
   const step = (label, n, prev, hint) => `<div class="ins-step"><span>${label}</span><b>${n.toLocaleString()}</b>${prev != null ? `<small>${pct(n, prev)} of previous step</small>` : `<small>${hint || ""}</small>`}</div>`;
   const prodRows = [...new Set([...pv.keys(), ...pc.keys()])].map((id) => ({ id, p: prods.find((x) => x.id === id), v: pv.get(id) || 0, c: pc.get(id) || 0 })).filter((r) => r.p).sort((a, b) => b.v - a.v || b.c - a.c).slice(0, 40);
-  const catName = (id) => id === "all" ? "All products" : collections.find((c) => c.id === id)?.name || id;
+  const catName = (id) => id === "all" ? "All products" : collections.find((c) => c.id.toLowerCase() === String(id).toLowerCase())?.name || id;
   const searchHits = (q) => prods.filter((p) => p.active && q.split(/\s+/).every((w) => (p.title + " " + (p.description || "")).toLowerCase().includes(w))).length;
   const days = []; for (let i = d.days - 1; i >= 0; i--) days.push(new Date(Date.now() - i * 864e5).toISOString().slice(0, 10));
   const dv = (day, k) => d.daily.filter((x) => x.day === day && x.kind === k).reduce((t, x) => t + x.n, 0), maxV = Math.max(1, ...days.map((x) => dv(x, "visit")));
@@ -72,7 +75,7 @@ async function insights() {
     <div class="panel"><b>🛍 Products visitors looked at</b><p class="muted" style="font-size:13px;margin:4px 0 12px">Products with lots of views but no carts are the ones to improve: better photos or a video, a lower price, a clearer title, or faster shipping.</p>
       ${prodRows.length ? `<div class="tbl-wrap"><table><tr><th>Product</th><th>Price</th><th>Views</th><th>Added to cart</th><th>Cart rate</th><th></th></tr>${prodRows.map((r) => `<tr><td><div class="flex" style="gap:10px">${thumb(r.p)}<div><a href="/products/${r.id}" target="_blank" style="color:#fff">${esc(r.p.title.slice(0, 60))}</a><div>${advice(r)}</div></div></div></td>
         <td>${money(r.p.price)}</td><td><b>${r.v}</b></td><td>${r.c}</td><td>${r.v ? pct(r.c, r.v) : "—"}</td><td><button class="btn sm ghost" data-edit-ins="${r.id}">Edit</button></td></tr>`).join("")}</table></div>` : `<p class="muted">No product views yet — they'll appear here as visitors browse.</p>`}</div>
-    <div class="grid-2"><div class="panel"><b>📂 Categories visited</b>${by("category").length ? `<table style="margin-top:10px">${by("category").slice(0, 15).map((r) => `<tr><td>${esc(catName(r.target))}</td><td style="text-align:right"><b>${r.n}</b></td></tr>`).join("")}</table>` : `<p class="muted">No category visits yet.</p>`}</div>
+    <div class="grid-2"><div class="panel"><b>📂 Categories visited</b>${by("category").length ? `<table style="margin-top:10px">${[...by("category").reduce((m, r) => m.set(r.target.toLowerCase(), (m.get(r.target.toLowerCase()) || 0) + r.n), new Map())].map(([target, n]) => ({ target, n })).sort((a, b) => b.n - a.n).slice(0, 15).map((r) => `<tr><td>${esc(catName(r.target))}</td><td style="text-align:right"><b>${r.n}</b></td></tr>`).join("")}</table>` : `<p class="muted">No category visits yet.</p>`}</div>
       <div class="panel"><b>🔎 What visitors searched for</b>${by("search").length ? `<table style="margin-top:10px">${by("search").slice(0, 20).map((r) => { const h = searchHits(r.target); return `<tr><td>“${esc(r.target)}”${h ? "" : ` <span class="ins-tag warn">0 results — import these products</span>`}</td><td style="text-align:right"><b>${r.n}</b></td></tr>`; }).join("")}</table>` : `<p class="muted">No searches yet. Searches that find nothing show here, so you know what to import.</p>`}</div></div>
     <div class="panel" id="offerPanel"><b>🎉 Add-to-cart offer</b><p class="muted" style="font-size:13px;margin:4px 0 12px">The first time a shopper adds something to their cart, a popup offers a discount, and it's applied automatically at checkout. It's a one-time welcome offer per shopper.</p>
       <div class="flex" style="gap:12px;flex-wrap:wrap;align-items:center"><label class="flex" style="gap:8px"><input type="checkbox" id="ofOn" ${offer.on ? "checked" : ""}> Offer is on</label>

@@ -283,7 +283,7 @@ async function handleRoutes(req, env, ctx) {
       const b = await body(req), day = new Date().toISOString().slice(0, 10);
       const evs = (Array.isArray(b.e) ? b.e : [b]).slice(0, 10).filter((x) => x && TRACK_KINDS.has(x.k));
       if (evs.length) await env.DB.batch(evs.map((x) => env.DB.prepare("INSERT INTO stats (day,kind,target,n) VALUES (?,?,?,1) ON CONFLICT(day,kind,target) DO UPDATE SET n=n+1")
-        .bind(day, x.k, str(x.t || "-", 80).toLowerCase())));
+        .bind(day, x.k, x.k === "search" ? str(x.t || "-", 80).toLowerCase() : str(x.t || "-", 80))));
     } catch {}
     return new Response(null, { status: 204 });
   }
