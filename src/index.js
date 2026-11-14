@@ -286,8 +286,8 @@ async function handleRoutes(req, env, ctx) {
       if (evs.length) await env.DB.batch(evs.map((x) => { const v = x.k.endsWith("time") ? Math.min(1800, Math.max(0, Math.round(Number(x.v) || 0))) : 1;
         return env.DB.prepare("INSERT INTO stats (day,kind,target,n) VALUES (?,?,?,?) ON CONFLICT(day,kind,target) DO UPDATE SET n=n+excluded.n")
           .bind(day, x.k, x.k === "search" ? str(x.t || "-", 80).toLowerCase() : str(x.t || "-", 80), v); }));
-    } catch {}
-    return new Response(null, { status: 204 });
+      return new Response(null, { status: 204, headers: { "x-tracked": String(evs.length) } });
+    } catch (e) { return new Response(null, { status: 204, headers: { "x-track-error": String(e.message || e).slice(0, 180) } }); }
   }
   if (path === "/api/quote" && m === "POST") {
     try { const o = await buildOrder(env, await body(req)); return json({ subtotal: o.subtotal, discount: o.discount, code: o.code, shipDiscount: o.shipDiscount, shipCode: o.shipCode, codeNote: o.codeNote, shipping: o.shipping, total: o.total,
