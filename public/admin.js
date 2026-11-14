@@ -883,6 +883,42 @@ async function setup() {
   // Homepage showcase slides
   let cfg = {}; try { cfg = await (await fetch("/api/config")).json(); } catch {}
   const slides = (cfg.heroSlides || []).filter((id) => prods.some((p) => p.id === id));
+  // Homepage promo tiles (the tall cards at the top): pick up to 2 products each; the first one's video autoplays.
+  const tilesCfg = cfg.homeTiles || {};
+  const TILES = [["ship", "Free US delivery"], ["flash", "Flash sale (shows during a sale)"], ...collections.map((c) => ["cat:" + c.id, "Top picks in " + c.name]),
+    ["live", "Premium Live"], ["new", "New arrivals"], ["under25", "Deals under $25"], ["video", "Premium Video"]];
+  main().insertAdjacentHTML("beforeend", `<div class="panel" id="tilesPanel"><b>Homepage promo tiles</b>
+    <p class="muted" style="margin:6px 0 14px;font-size:13px">The big colourful cards at the top of the homepage. Each shows 2 products; if the first one has a video it plays automatically (muted, on loop).
+      Tiles you leave on <b>Automatic</b> pick products with videos first, then the most popular, then the most expensive. Category tiles show for your 4 biggest categories.</p>
+    <div class="tbl-wrap"><table><tr><th>Tile</th><th>Products shown</th><th></th></tr>${TILES.map(([k, name]) => { const ids = (tilesCfg[k] || []).filter((id) => prods.some((p) => p.id === id));
+      return `<tr><td><b>${esc(name)}</b></td><td>${ids.length ? ids.map((id, i) => { const p = prods.find((x) => x.id === id); return `<div class="flex" style="gap:8px;margin:3px 0">${thumb(p)}<span style="font-size:13px">${i === 0 && p.video ? "🎬 " : ""}${esc(p.title.slice(0, 50))}</span></div>`; }).join("") : `<span class="muted">Automatic</span>`}</td>
+        <td style="white-space:nowrap"><button class="btn sm ghost" data-tpick="${esc(k)}">Choose…</button>${ids.length ? ` <button class="btn sm ghost" data-tauto="${esc(k)}">Automatic</button>` : ""}</td></tr>`; }).join("")}</table></div></div>`);
+  const saveTile = async (key, ids, msg) => { try { await api("/api/admin/tiles", "PUT", { key, ids }); toast(msg); setup(); } catch (er) { toast(er.message); } };
+  main().querySelectorAll("[data-tauto]").forEach((b) => (b.onclick = () => saveTile(b.dataset.tauto, [], "Tile is automatic again")));
+  main().querySelectorAll("[data-tpick]").forEach((b) => (b.onclick = () => {
+    const key = b.dataset.tpick, picked = [...(tilesCfg[key] || [])].filter((id) => prods.some((p) => p.id === id));
+    const m = document.createElement("div"); m.className = "modal-bg";
+    m.innerHTML = `<div class="modal" style="max-width:640px"><h3 style="margin-top:0">Choose up to 2 products</h3>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">The <b>first</b> product is the big one — if it has a video (🎬) it autoplays on the tile.</p>
+      <div class="flex" style="gap:10px;flex-wrap:wrap"><input class="inp" id="tq" placeholder="Search products…" style="flex:1;min-width:200px"><label class="flex" style="gap:6px;font-size:13px"><input type="checkbox" id="tv"> With video only</label></div>
+      <div id="tsel" style="margin:10px 0;font-size:13px"></div><div id="tl" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+      <div class="flex" style="justify-content:flex-end;gap:10px;margin-top:14px"><button class="btn ghost" id="tc">Cancel</button><button class="btn" id="ts">Save tile</button></div></div>`;
+    document.body.appendChild(m);
+    const pool = prods.filter((p) => p.active).sort((a, b) => (b.video ? 1 : 0) - (a.video ? 1 : 0) || (b.sold || 0) - (a.sold || 0) || b.price - a.price);
+    const draw = () => {
+      const q = $("#tq", m).value.toLowerCase().trim(), vo = $("#tv", m).checked;
+      $("#tsel", m).innerHTML = picked.length ? "Selected: " + picked.map((id, i) => `<b>${i + 1}.</b> ${esc(prods.find((p) => p.id === id).title.slice(0, 40))}`).join(" &nbsp; ") : `<span class="muted">Nothing selected — tick up to 2</span>`;
+      $("#tl", m).innerHTML = pool.filter((p) => (!vo || p.video) && (!q || p.title.toLowerCase().includes(q))).slice(0, 60).map((p) => `<label class="flex" style="gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer">
+        <input type="checkbox" data-tp="${p.id}" ${picked.includes(p.id) ? "checked" : ""}>${thumb(p)}<span style="flex:1;font-size:13px">${p.video ? "🎬 " : ""}${esc(p.title.slice(0, 70))}</span><span class="muted" style="font-size:12px">${money(p.price)}</span></label>`).join("") || `<p class="muted" style="padding:12px">No matching products</p>`;
+      $("#tl", m).querySelectorAll("[data-tp]").forEach((c) => (c.onchange = () => {
+        if (c.checked) { if (picked.length >= 2) { c.checked = false; return toast("Up to 2 products per tile"); } picked.push(c.dataset.tp); } else picked.splice(picked.indexOf(c.dataset.tp), 1);
+        draw();
+      }));
+    };
+    $("#tq", m).oninput = draw; $("#tv", m).onchange = draw; $("#tc", m).onclick = () => m.remove(); m.onclick = (e) => e.target === m && m.remove();
+    $("#ts", m).onclick = () => { m.remove(); saveTile(key, picked, picked.length ? "Tile updated" : "Tile is automatic again"); };
+    draw();
+  }));
   main().insertAdjacentHTML("beforeend", `<div class="panel" id="heroPanel"><b>Homepage showcase</b>
     <p class="muted" style="margin:6px 0 14px;font-size:13px">The rotating cards at the top of the homepage — the front card grows big. ${slides.length ? "Showing your picks in this order:" : "Currently <b>automatic</b>: it rotates your category images. Add products below to choose the slides yourself."}</p>
     ${slides.map((id, i) => { const p = prods.find((x) => x.id === id); return `<div class="row-between" style="padding:8px 0;border-bottom:1px solid var(--line);gap:10px">

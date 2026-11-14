@@ -777,3 +777,6 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .az-ti .art.photo { padding: 0; } .az-ti .art.photo img { object-fit: cover; border-radius: 0; filter: none; }
 @media (max-width: 1100px) { body.home-wide .az-quad-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 800px) { body.home-wide .az-quad-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.az-tv { width: 60%; aspect-ratio: 4/5; left: 8%; bottom: 14px; transform: rotate(-3deg); z-index: 2; background: #000; }
+.az-tv video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.az-play { position: absolute; right: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; font-size: 11px; display: grid; place-items: center; pointer-events: none; }

@@ -258,23 +258,34 @@ function home() {
     <div class="az-shelf-head"><h2>${title}</h2>${extra}<a href="${href}" data-link>See more ›</a></div>
     <div class="az-rail" data-rail>${list.map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : "";
   const quad = ({ c, items }) => `<div class="az-quad"><h3>${esc(c.name)}</h3><div class="az-q4">${pick4(items).map((p) => `<a href="/products/${p.id}" data-link><div class="az-qimg">${pimg(p)}</div><span>${esc(p.title.split(/[,(|-]/)[0].trim().slice(0, 28))}</span></a>`).join("")}</div><a class="az-more" href="/collections/${c.id}" data-link>See more</a></div>`;
-  // Promo cards (Amazon's tall tiles), built from what's actually live in the store.
+  // Promo cards (Amazon's tall tiles). Admin can pick up to 2 products per tile; otherwise products with videos first, then most popular, then priciest.
+  const rank = (a, b) => (b.video ? 1 : 0) - (a.video ? 1 : 0) || (b.sold || 0) - (a.sold || 0) || b.price - a.price;
+  const used = new Set(Object.values(CONFIG.homeTiles || {}).flat()); // automatic picks avoid repeating products other tiles show
+  const pickTile = (key, pool) => {
+    const chosen = ((CONFIG.homeTiles || {})[key] || []).map((id) => PRODUCTS.find((p) => p.id === id)).filter(Boolean);
+    const sorted = [...(pool.length ? pool : PRODUCTS)].sort(rank).filter((p) => !chosen.includes(p));
+    const auto = [...sorted.filter((p) => !used.has(p.id)), ...sorted.filter((p) => used.has(p.id))];
+    const out = [...chosen, ...auto].slice(0, 2); out.forEach((p) => used.add(p.id)); return out;
+  };
   const tiles = [
-    { cls: "t-blue", eb: "Get what you need fast", h: `Free US delivery over $${FREE_SHIP}`, btn: "Shop now", href: "/collections/all", imgs: (usFast.length ? usFast : best).slice(0, 2) },
-    onSale.length && { cls: "t-violet", eb: "⚡ Flash sale · limited time", h: `Up to ${Math.max(...onSale.map((p) => p.promo.percent))}% off`, timer: flashEnds, href: "/collections/all?sort=deals", imgs: onSale.slice(0, 2) },
-    ...cats.slice(0, 4).map(({ c, items }, i) => ({ cls: ["t-teal", "t-magenta", "t-navy", "t-amber"][i], eb: "Top picks in", h: esc(c.name), href: "/collections/" + c.id, imgs: pick4(items).slice(0, 2) })),
-    { cls: "t-red", eb: CONFIG.live?.status === "live" ? "● On air now" : "Watch & shop", h: "Premium Live", href: "/live", icon: "📺" },
-    { cls: "t-indigo", eb: "Just landed", h: "New arrivals", href: "/collections/all?sort=latest", imgs: fresh.slice(0, 2) },
-    under25.length && { cls: "t-green", eb: "Little prices", h: "Deals under $25", href: "/collections/all?sort=price-asc", imgs: under25.slice(0, 2) },
-    { cls: "t-slate", eb: "See it in action", h: "Premium Video", href: "/videos", icon: "▶" },
-  ].filter(Boolean);
+    { key: "ship", cls: "t-blue", eb: "Get what you need fast", h: `Free US delivery over $${FREE_SHIP}`, btn: "Shop now", href: "/collections/all", pool: usFast },
+    onSale.length && { key: "flash", cls: "t-violet", eb: "⚡ Flash sale · limited time", h: `Up to ${Math.max(...onSale.map((p) => p.promo.percent))}% off`, timer: flashEnds, href: "/collections/all?sort=deals", pool: onSale },
+    ...cats.slice(0, 4).map(({ c, items }, i) => ({ key: "cat:" + c.id, cls: ["t-teal", "t-magenta", "t-navy", "t-amber"][i], eb: "Top picks in", h: esc(c.name), href: "/collections/" + c.id, pool: items })),
+    { key: "live", cls: "t-red", eb: CONFIG.live?.status === "live" ? "● On air now" : "Watch & shop", h: "Premium Live", href: "/live", pool: PRODUCTS },
+    { key: "new", cls: "t-indigo", eb: "Just landed", h: "New arrivals", href: "/collections/all?sort=latest", pool: fresh },
+    under25.length && { key: "under25", cls: "t-green", eb: "Little prices", h: "Deals under $25", href: "/collections/all?sort=price-asc", pool: under25 },
+    { key: "video", cls: "t-slate", eb: "See it in action", h: "Premium Video", href: "/videos", pool: PRODUCTS.filter((p) => p.video) },
+  ].filter(Boolean).map((t) => ({ ...t, imgs: pickTile(t.key, t.pool) }));
+  const tileMedia = (p, i) => i === 0 && p.video
+    ? `<div class="az-ti az-ti0 az-tv"><video data-src="${esc(p.video)}" muted loop playsinline preload="none" ${p.images?.[0] ? `poster="${esc(p.images[0])}"` : ""}></video><span class="az-play">▶</span></div>`
+    : `<div class="az-ti az-ti${i}">${pimg(p)}</div>`;
   document.title = "LeeysPremium — Everything you need, delivered fast";
   app.innerHTML = `
   <section class="az-hero"><div class="wrap az-hero-wrap">
     <div class="az-tiles" data-rail>${tiles.map((t) => `<a class="az-tile ${t.cls}" href="${t.href}" data-link>
       <span class="az-eb">${t.eb}</span><b class="az-h">${t.h}</b>
       ${t.timer ? `<span class="az-pill">Ends in <b data-ends="${t.timer}">${timeLeft(t.timer)}</b></span>` : t.btn ? `<span class="az-pill">${t.btn}</span>` : ""}
-      <div class="az-tile-art">${t.imgs ? t.imgs.map((p, i) => `<div class="az-ti az-ti${i}">${pimg(p)}</div>`).join("") : `<div class="az-ticon">${t.icon}</div>`}</div></a>`).join("")}</div>
+      <div class="az-tile-art">${t.imgs.map(tileMedia).join("")}</div></a>`).join("")}</div>
     <button class="az-arrow l" data-rl="-1" aria-label="Previous">‹</button><button class="az-arrow r" data-rl="1" aria-label="Next">›</button></div></section>
   ${marquee()}
   ${homeOffers()}
@@ -295,6 +306,19 @@ function home() {
   app.querySelectorAll("[data-rl]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); const r = b.parentElement.querySelector("[data-rail]"); r.scrollBy({ left: Number(b.dataset.rl) * r.clientWidth * 0.85, behavior: "smooth" }); }));
   startShowcase();
   bindVouchers();
+  tileVideos();
+}
+// Tile videos load and play only while visible (keeps the page fast and data-light on phones).
+let tileObs = null;
+function tileVideos() {
+  tileObs?.disconnect();
+  const vids = [...app.querySelectorAll(".az-tv video")];
+  if (!vids.length) return;
+  if (!("IntersectionObserver" in window)) { vids.forEach((v) => { v.src = v.dataset.src; v.play().catch(() => {}); }); return; }
+  tileObs = new IntersectionObserver((es) => es.forEach(({ target: v, isIntersecting }) => {
+    if (isIntersecting) { if (!v.src) v.src = v.dataset.src; v.play().catch(() => {}); } else v.pause();
+  }), { threshold: 0.4 });
+  vids.forEach((v) => tileObs.observe(v));
 }
 /* ---------- Vouchers (Shopee-style) ---------- */
 const wallet = () => { try { const w = JSON.parse(localStorage.getItem("lp_vouchers") || "[]"); const old = localStorage.getItem("lp_voucher"); return old && !w.includes(old) ? [...w, old] : w; } catch { return []; } };

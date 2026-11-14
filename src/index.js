@@ -177,7 +177,7 @@ async function handleRoutes(req, env, ctx) {
   await ensureSchema(env);
 
   if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES, country: req.cf?.country || "US",
-    heroSlides: parse(await getSetting(env, "hero_slides"), []), live: (({ status, title }) => ({ status: status || "off", title: title || "" }))(parse(await getSetting(env, "live"), {}) || {}) });
+    heroSlides: parse(await getSetting(env, "hero_slides"), []), homeTiles: parse(await getSetting(env, "home_tiles"), {}) || {}, live: (({ status, title }) => ({ status: status || "off", title: title || "" }))(parse(await getSetting(env, "live"), {}) || {}) });
 
   if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb,cover FROM collections ORDER BY sort").all()).results);
   if (path === "/api/products") {
@@ -413,6 +413,15 @@ async function admin(req, env, ctx, path, m, url) {
     const rules = ((await body(req)).rules || []).map((r) => ({ kw: str(r.kw, 60).toLowerCase(), cat: str(r.cat, 40) })).filter((r) => r.kw && r.cat).slice(0, 200);
     await setSetting(env, "cat_rules", JSON.stringify(rules));
     return json(rules);
+  }
+  if (path === "/api/admin/tiles" && m === "PUT") { // homepage promo tiles: { key, ids } (up to 2 products per tile; [] = automatic)
+    const b = await body(req), key = str(b.key, 80);
+    if (!/^(ship|flash|live|new|under25|video|cat:[\w-]+)$/.test(key)) return bad("Unknown tile");
+    const all = parse(await getSetting(env, "home_tiles"), {}) || {};
+    const ids = [...new Set((b.ids || []).map((x) => str(x, 100)).filter(Boolean))].slice(0, 2);
+    if (ids.length) all[key] = ids; else delete all[key];
+    await setSetting(env, "home_tiles", JSON.stringify(all));
+    return json({ ok: true, tiles: all });
   }
   if (path === "/api/admin/hero" && m === "PUT") {
     const ids = ((await body(req)).ids || []).map((x) => str(x, 100)).filter(Boolean).slice(0, 12);
