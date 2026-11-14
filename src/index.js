@@ -179,7 +179,7 @@ async function ensureCartOfferVoucher(env, o) {
   await env.DB.prepare(`INSERT INTO discounts (code, percent, type, active, show, label, scope) VALUES (?,?, 'percent', ?, 0, ?, 'all')
     ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, active=excluded.active, label=excluded.label`).bind(o.code, o.percent, o.on ? 1 : 0, `${o.percent}% off your order`).run();
 }
-const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "checkout", "buy", "ptime", "vtime"]);
+const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "checkout", "buy", "ptime", "vtime", "country", "city"]);
 const bustCache = (env) => setSetting(env, "cache_v", String(Date.now())).catch(() => {});
 async function handleRoutes(req, env, ctx) {
   const url = new URL(req.url), path = url.pathname, m = req.method;
@@ -281,7 +281,12 @@ async function handleRoutes(req, env, ctx) {
   if (path === "/api/track" && m === "POST") { // anonymous visitor counts per day (no personal data stored)
     try {
       const b = await body(req), day = new Date().toISOString().slice(0, 10);
-      const evs = (Array.isArray(b.e) ? b.e : [b]).slice(0, 10).filter((x) => x && TRACK_KINDS.has(x.k));
+      const evs = (Array.isArray(b.e) ? b.e : [b]).slice(0, 10).filter((x) => x && TRACK_KINDS.has(x.k) && x.k !== "country" && x.k !== "city");
+      // Where visitors are from (Cloudflare's approximate location) — saved as totals only, once per visit
+      if (evs.some((x) => x.k === "visit") && req.cf) {
+        const cc = String(req.cf.country || "XX").slice(0, 2).toUpperCase(), city = req.cf.city ? String(req.cf.city).slice(0, 50) : "";
+        evs.push({ k: "country", t: cc }); if (city) evs.push({ k: "city", t: `${city}, ${req.cf.region ? String(req.cf.region).slice(0, 30) + ", " : ""}${cc}` });
+      }
       // time kinds (ptime = seconds on a product page, vtime = seconds of a visit) add their seconds; the rest add 1
       if (evs.length) await env.DB.batch(evs.map((x) => { const v = x.k.endsWith("time") ? Math.min(1800, Math.max(0, Math.round(Number(x.v) || 0))) : 1;
         return env.DB.prepare("INSERT INTO stats (day,kind,target,n) VALUES (?,?,?,?) ON CONFLICT(day,kind,target) DO UPDATE SET n=n+excluded.n")
