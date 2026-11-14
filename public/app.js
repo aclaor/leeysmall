@@ -161,7 +161,7 @@ function card(p) {
       ${off ? `<span class="badge sale">-${off}%</span>` : ""}${art(p)}
       <div class="ribbons">${giftFor(p) ? `<span class="rb gift">🎁 Free gift</span>` : ""}${p.video ? `<span class="rb vid">▶ Video</span>` : ""}${freeShip ? `<span class="rb ship">Free shipping</span>` : p.ships === "us" ? `<span class="rb us">US warehouse</span>` : ""}${v ? `<span class="rb voucher">${v.type === "shipping" ? "Free ship voucher" : v.type === "amount" ? `${money(v.amount).replace(".00", "")} off voucher` : `Voucher ${v.percent}% off`}</span>` : ""}</div></div></a>
     ${p.stock > 0 ? `<button class="btn quick-add" data-add="${p.id}">Quick add</button>` : ""}</div>
-    <a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>
+    ${(() => { const cc = COLLECTIONS.find((x) => x.id === p.collection); return cc ? `<a class="rc-cat" href="/collections/${cc.id}" data-link>${esc(cc.name)}</a>` : ""; })()}<a href="/products/${p.id}" data-link><h3>${esc(p.title)}</h3></a>
     <div class="price ${off ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s>` : ""}</div>
     ${p.promo ? `<div class="promo-line">⚡ ${p.promo.percent}% off · ends in <span data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</span></div>`
       : (() => { const s = schedFor(p); return s ? `<div class="sched-line">📅 ${s.percent}% off · ${esc(s.text.split(",")[0])}</div>` : ""; })()}
@@ -255,9 +255,9 @@ function home() {
   const cats = COLLECTIONS.map((c) => ({ c, items: PRODUCTS.filter((p) => p.collection === c.id) })).filter((x) => x.items.length).sort((a, b) => b.items.length - a.items.length);
   const pick4 = (list) => [...list].sort((a, b) => (b.sold || 0) - (a.sold || 0) || ((b.images || []).length ? 1 : 0) - ((a.images || []).length ? 1 : 0)).slice(0, 4);
   const shelf = (title, href, list, extra = "") => list.length ? `<section class="az-shelf"><div class="wrap"><div class="az-panel">
-    <div class="az-shelf-head"><h2>${title}</h2>${extra}<a href="${href}" data-link>See more ›</a></div>
+    <div class="az-shelf-head"><h2><a class="hlink" href="${href}" data-link>${title}</a></h2>${extra}<a href="${href}" data-link>See more ›</a></div>
     <div class="az-rail" data-rail>${list.map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : "";
-  const quad = ({ c, items }) => `<div class="az-quad"><h3>${esc(c.name)}</h3><div class="az-q4">${pick4(items).map((p) => `<a href="/products/${p.id}" data-link><div class="az-qimg">${pimg(p)}</div><span>${esc(p.title.split(/[,(|-]/)[0].trim().slice(0, 28))}</span></a>`).join("")}</div><a class="az-more" href="/collections/${c.id}" data-link>See more</a></div>`;
+  const quad = ({ c, items }) => `<div class="az-quad"><h3><a class="hlink" href="/collections/${c.id}" data-link>${esc(c.name)} ›</a></h3><div class="az-q4">${pick4(items).map((p) => `<a href="/products/${p.id}" data-link><div class="az-qimg">${pimg(p)}</div><span>${esc(p.title.split(/[,(|-]/)[0].trim().slice(0, 28))}</span></a>`).join("")}</div><a class="az-more" href="/collections/${c.id}" data-link>See more</a></div>`;
   // Promo cards (Amazon's tall tiles). Admin can pick up to 2 products per tile; otherwise products with videos first, then most popular, then priciest.
   const rank = (a, b) => (b.video ? 1 : 0) - (a.video ? 1 : 0) || (b.sold || 0) - (a.sold || 0) || b.price - a.price;
   const used = new Set(Object.values(CONFIG.homeTiles || {}).flat()); // automatic picks avoid repeating products other tiles show
@@ -290,7 +290,7 @@ function home() {
   ${marquee()}
   ${homeOffers()}
   ${cats.length ? `<section class="az-quads"><div class="wrap az-quad-grid" style="--n:${Math.min(5, cats.length)}">${cats.slice(0, 5).map(quad).join("")}</div></section>` : ""}
-  ${onSale.length ? `<section class="az-bleed"><div class="wrap"><div class="az-bleed-head"><h2>⚡ Flash sale</h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
+  ${onSale.length ? `<section class="az-bleed"><div class="wrap"><div class="az-bleed-head"><h2><a class="hlink" href="/collections/all?deal=today" data-link>⚡ Flash sale ›</a></h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
     <div class="az-rel"><div class="az-rail" data-rail>${onSale.slice(0, 20).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
   ${shelf("Top picks for you", "/collections/all?sort=top", best)}
   <section class="az-spot"><div class="wrap"><div class="az-panel az-spot-in">
@@ -398,7 +398,7 @@ function homeOffers() {
     ${have.includes(v.code) ? `<button class="btn sm ghost" disabled>Claimed ✓</button>` : `<button class="btn sm accent" data-claim="${esc(v.code)}">Claim</button>`}</div>`);
   const sc = ss.map((x) => `<a class="vcard sched" href="${x.scope === "collection" ? "/collections/" + x.target : "/collections/all"}" data-link><div class="v-left"><b>${x.percent}%</b><span>OFF</span></div>
     <div class="v-mid"><b>${esc(x.label)}</b><span>${x.scope === "collection" ? esc(COLLECTIONS.find((c) => c.id === x.target)?.name || "") + " · " : ""}${esc(x.text)}</span></div><span class="btn sm ghost">Shop ›</span></a>`);
-  return `<section class="az-shelf"><div class="wrap"><div class="az-panel"><div class="az-shelf-head"><h2>🎟 Vouchers & weekly deals</h2><a href="/collections/all?sort=deals" data-link>See deals ›</a></div>
+  return `<section class="az-shelf"><div class="wrap"><div class="az-panel"><div class="az-shelf-head"><h2><a class="hlink" href="/collections/all?deal=any" data-link>🎟 Vouchers & weekly deals</a></h2><a href="/collections/all?sort=deals" data-link>See deals ›</a></div>
     <div class="az-offers">${[...vc, ...sc].join("")}</div></div></div></section>`;
 }
 function bindVouchers() {
@@ -428,7 +428,7 @@ function rcard(p) {
   return `<div class="rcard"><div class="rc-img"><a href="/products/${p.id}" data-link>${img ? `<img src="${esc(img)}" alt="${esc(p.title)}" loading="lazy">` : art(p)}</a>
       ${p.promo ? `<span class="rc-flag">⚡ ${p.promo.percent}% off</span>` : p.video ? `<span class="rc-flag vid">▶ Video</span>` : ""}${p.stock === 0 ? `<span class="rc-flag out">Sold out</span>` : ""}
       ${p.stock > 0 ? `<button class="rc-add" data-add="${p.id}" aria-label="Add to cart" title="Add to cart">+</button>` : ""}</div>
-    <div class="rc-body"><a class="rc-t" href="/products/${p.id}" data-link>${esc(p.title)}</a>
+    <div class="rc-body">${(() => { const cc = COLLECTIONS.find((x) => x.id === p.collection); return cc ? `<a class="rc-cat" href="/collections/${cc.id}" data-link>${esc(cc.name)}</a>` : ""; })()}<a class="rc-t" href="/products/${p.id}" data-link>${esc(p.title)}</a>
       <div class="rc-meta">${r ? `<span class="rc-stars"><b>${r.toFixed(1)}</b> <i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${p.reviews ? ` <span>(${p.reviews >= 1000 ? (p.reviews / 1000).toFixed(1) + "K" : p.reviews})</span>` : ""}</span>` : ""}${sw > 1 ? `<span class="rc-sw">+${sw} options</span>` : ""}</div>
       ${p.sold >= 50 ? `<div class="rc-sold">${p.sold >= 1000 ? (p.sold / 1000).toFixed(1) + "K+" : p.sold + "+"} bought</div>` : ""}
       <div class="rc-price">${off ? `<span class="rc-off">-${off}%</span>` : ""}<span class="rc-now"><sup>$</sup>${Math.floor(p.price)}<sup>${String(Math.round((p.price % 1) * 100)).padStart(2, "0")}</sup></span>${off ? `<s>${money(p.compareAt)}</s>` : ""}</div>
@@ -684,7 +684,7 @@ function product(id) {
       <details class="acc"><summary>Shipping</summary><p>US orders ship from our US warehouses where available (3–7 business days). International orders ship worldwide in 7–20 business days with tracking. Free US shipping over $${FREE_SHIP}.</p></details>
       <details class="acc"><summary>Returns</summary><p>Not happy? Return it within 30 days of delivery for a full refund. Damaged or faulty items are replaced free.</p></details>
     </div></div>
-    <section class="section" style="padding-top:0"><div class="section-head"><h2>You may also like</h2></div><div class="grid" id="related">${related.slice(0, shown).map(card).join("")}</div>
+    <section class="section" style="padding-top:0"><div class="section-head"><h2>You may also like</h2><a class="hlink more" href="/collections/${coll.id}" data-link>More in ${esc(coll.name)} ›</a></div><div class="grid" id="related">${related.slice(0, shown).map(card).join("")}</div>
       ${related.length > shown ? `<div style="text-align:center;margin-top:26px"><button class="btn ghost" id="moreRelated">Show more</button></div>` : ""}</section></div>`;
   const variantStr = () => Object.values(sel).join(" / ");
   $("#pdpBack").onclick = goBack;

@@ -870,3 +870,12 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .az-grid { grid-template-columns: repeat(auto-fill, minmax(188px, 1fr)); }
 @media (max-width: 900px) { .az-res-bar > .flex { width: 100%; justify-content: space-between; } .fl-open { padding: 6px 14px; } }
 @media (max-width: 560px) { .az-grid { grid-template-columns: 1fr 1fr; } }
+/* Clickable section titles and category names */
+.hlink { color: inherit; text-decoration: none; transition: color .15s; }
+.hlink:hover { color: #ffb347; text-decoration: underline; text-underline-offset: 4px; }
+.az-bleed-head .hlink:hover { color: #fff; }
+.section-head .hlink.more { margin-left: auto; font-size: 14px; font-weight: 600; color: #6fb3ff; }
+.section-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.rc-cat { display: block; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #6fb3ff; margin-bottom: 1px; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-cat:hover { color: #ffb347; text-decoration: underline; }
+.card .rc-cat { margin: 8px 0 -2px; }
