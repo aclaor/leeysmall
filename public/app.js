@@ -409,51 +409,151 @@ function bindVouchers() {
   }));
 }
 
+/* ---------- Category / search results: Amazon-style (filter sidebar, sort menu, big photos, pages) ---------- */
+const GENDERS = [["Women", /\b(women'?s?|woman|ladies|lady|female|girls?'? ?women)\b/i], ["Men", /\b(men'?s?|man|male|gentlemen)\b/i],
+  ["Boys", /\b(boys?'?s?)\b/i], ["Girls", /\b(girls?'?s?)\b/i], ["Kids & Baby", /\b(kids?|children'?s?|child|baby|toddlers?|infants?)\b/i], ["Unisex", /\bunisex\b/i]];
+const genderOf = (p) => { const t = p.title; const g = GENDERS.filter(([, r]) => r.test(t)).map(([n]) => n); return g.includes("Women") ? g.filter((x) => x !== "Men") : g; };
+const SIZE_ORDER = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "2XL", "XXXL", "3XL", "4XL", "5XL", "6XL"];
+const sizeKey = (v) => { const u = v.toUpperCase().trim(); const i = SIZE_ORDER.indexOf(u); return i >= 0 ? i : 100 + (parseFloat(u) || 999); };
+const sizesOf = (p) => (p.variants || []).filter((v) => /size|尺/i.test(v.name)).flatMap((v) => v.options.map((o) => String(o).trim().toUpperCase())).filter((o) => o.length <= 6);
+const COLORS = [["Black", "#111"], ["White", "#fff"], ["Grey", "#8a8f99"], ["Silver", "#c7ccd4"], ["Gold", "#d4af37"], ["Red", "#d62b2b"], ["Pink", "#f48fb1"], ["Orange", "#f08a24"],
+  ["Yellow", "#f5d90a"], ["Green", "#2e9d57"], ["Blue", "#2f6fdf"], ["Navy", "#1b2a59"], ["Purple", "#7b3fc4"], ["Brown", "#7a4b2a"], ["Beige", "#d9c7a5"]];
+const colorsOf = (p) => { const txt = (p.variants || []).filter((v) => /colou?r|style|颜色/i.test(v.name)).flatMap((v) => v.options).join(" ").toLowerCase().replace(/gray/g, "grey").replace(/khaki|apricot|cream/g, "beige").replace(/coffee|camel/g, "brown").replace(/rose|fuchsia/g, "pink").replace(/sky|light blue|royal/g, "blue");
+  return COLORS.map(([n]) => n).filter((n) => new RegExp("\\b" + n.toLowerCase() + "\\b").test(txt)); };
+const PRICE_BANDS = [[0, 10, "Under $10"], [10, 25, "$10 to $25"], [25, 50, "$25 to $50"], [50, 100, "$50 to $100"], [100, 0, "$100 & above"]];
+const SORTS = [["featured", "Featured"], ["price-asc", "Price: Low to High"], ["price-desc", "Price: High to Low"], ["review", "Avg. Customer Review"], ["latest", "Newest Arrivals"], ["top", "Best Sellers"], ["deals", "Biggest Discount"]];
+function rcard(p) {
+  const off = offPct(p), r = p.rating || 0, sw = (p.variants || []).reduce((t, v) => Math.max(t, v.options.length), 0);
+  const img = (p.images || [])[0];
+  return `<div class="rcard"><div class="rc-img"><a href="/products/${p.id}" data-link>${img ? `<img src="${esc(img)}" alt="${esc(p.title)}" loading="lazy">` : art(p)}</a>
+      ${p.promo ? `<span class="rc-flag">⚡ ${p.promo.percent}% off</span>` : p.video ? `<span class="rc-flag vid">▶ Video</span>` : ""}${p.stock === 0 ? `<span class="rc-flag out">Sold out</span>` : ""}
+      ${p.stock > 0 ? `<button class="rc-add" data-add="${p.id}" aria-label="Add to cart" title="Add to cart">+</button>` : ""}</div>
+    <div class="rc-body"><a class="rc-t" href="/products/${p.id}" data-link>${esc(p.title)}</a>
+      <div class="rc-meta">${r ? `<span class="rc-stars"><b>${r.toFixed(1)}</b> <i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${p.reviews ? ` <span>(${p.reviews >= 1000 ? (p.reviews / 1000).toFixed(1) + "K" : p.reviews})</span>` : ""}</span>` : ""}${sw > 1 ? `<span class="rc-sw">+${sw} options</span>` : ""}</div>
+      ${p.sold >= 50 ? `<div class="rc-sold">${p.sold >= 1000 ? (p.sold / 1000).toFixed(1) + "K+" : p.sold + "+"} bought</div>` : ""}
+      <div class="rc-price">${off ? `<span class="rc-off">-${off}%</span>` : ""}<span class="rc-now"><sup>$</sup>${Math.floor(p.price)}<sup>${String(Math.round((p.price % 1) * 100)).padStart(2, "0")}</sup></span>${off ? `<s>${money(p.compareAt)}</s>` : ""}</div>
+      ${p.promo ? `<div class="promo-line">Ends in <span data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</span></div>` : ""}
+      <div class="rc-ship">${p.price >= FREE_SHIP ? "<b>FREE delivery</b> " : ""}${etaShort(p)}${p.ships === "us" ? " · US warehouse" : ""}</div></div></div>`;
+}
 function collection(id, params) {
   const c = COLLECTIONS.find((x) => x.id === id);
-  const q = (params.get("q") || "").toLowerCase();
-  let list = id === "all" ? [...PRODUCTS] : PRODUCTS.filter((p) => p.collection === id);
-  if (q) list = PRODUCTS.filter((p) => (p.title + " " + p.description).toLowerCase().includes(q));
-  const title = q ? `Search: “${params.get("q")}”` : c ? c.name : "All products";
-  document.title = title + " — LeeysPremium";
-  const sortParam = params.get("sort");
-  const state = { sort: ["popular", "latest", "top", "price-asc", "price-desc", "deals"].includes(sortParam) ? sortParam : sortParam === "best" ? "top" : "popular",
-    stock: params.get("stock") === "1", max: Number(params.get("max")) || 0, us: params.get("us") === "1" };
+  const qRaw = params.get("q") || "", q = qRaw.toLowerCase().trim();
+  const words = q.split(/\s+/).filter(Boolean);
+  let base = id === "all" || q ? [...PRODUCTS] : PRODUCTS.filter((p) => p.collection === id);
+  if (q) base = base.filter((p) => { const t = (p.title + " " + (p.description || "") + " " + (COLLECTIONS.find((x) => x.id === p.collection)?.name || "")).toLowerCase(); return words.every((w) => t.includes(w)); });
+  const title = q ? qRaw : c ? c.name : "All products";
+  document.title = (q ? `Results for “${qRaw}”` : title) + " — LeeysPremium";
+  const meta = new Map(base.map((p) => [p.id, { g: genderOf(p), s: sizesOf(p), c: colorsOf(p) }]));
+  const list = (k) => (params.get(k) || "").split(",").filter(Boolean);
+  const sortP = params.get("sort");
+  const st = { sort: SORTS.some(([v]) => v === sortP) ? sortP : sortP === "best" ? "top" : sortP === "popular" ? "featured" : "featured",
+    cat: list("cat"), g: list("g"), sz: list("sz"), col: list("col"), band: params.get("band") || "", min: Number(params.get("min")) || 0, max: Number(params.get("max")) || 0,
+    rate: Number(params.get("rate")) || 0, us: params.get("us") === "1", stock: params.get("stock") === "1", free: params.get("free") === "1", deal: params.get("deal") || "", page: Math.max(1, Number(params.get("page")) || 1) };
+  if (sortP === "deals" && !st.deal) st.deal = "";
+  const PER = 24;
   const catPromo = c ? PROMO.promos.find((x) => (x.scope === "collection" && x.target === c.id) || x.scope === "all") : PROMO.promos.find((x) => x.scope === "all");
-  const cover = c ? coverProduct(c) : null;
-  const apply = () => {
-    let l = list.filter((p) => (!state.stock || p.stock > 0) && (!state.max || p.price <= state.max) && (!state.us || p.ships === "us") && (state.sort !== "deals" || offPct(p) > 0));
-    const s = { latest: (a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")), top: (a, b) => (b.sold || 0) - (a.sold || 0),
-      "price-asc": (a, b) => a.price - b.price, "price-desc": (a, b) => b.price - a.price, deals: (a, b) => offPct(b) - offPct(a) }[state.sort];
-    if (s) l.sort(s);
-    $("#results").innerHTML = l.length ? l.map(card).join("") : `<div class="empty" style="grid-column:1/-1">No products match these filters.</div>`;
-    $("#count").textContent = l.length + " product" + (l.length === 1 ? "" : "s");
-    document.querySelectorAll("[data-sort]").forEach((t) => t.classList.toggle("on", t.dataset.sort === state.sort || (t.dataset.sort === "price" && state.sort.startsWith("price"))));
-    const pt = $("[data-sort=price] i"); if (pt) pt.textContent = state.sort === "price-asc" ? "↑" : state.sort === "price-desc" ? "↓" : "↕";
+  // facet values that exist in this result set
+  const count = (fn) => { const m = new Map(); base.forEach((p) => fn(p).forEach((v) => m.set(v, (m.get(v) || 0) + 1))); return m; };
+  const gC = count((p) => meta.get(p.id).g), sC = count((p) => meta.get(p.id).s), cC = count((p) => meta.get(p.id).c), catC = count((p) => [p.collection]);
+  const sizes = [...sC.keys()].filter((k) => sC.get(k) >= 1).sort((a, b) => sizeKey(a) - sizeKey(b)).slice(0, 30);
+  const pass = (p, skip) => {
+    const m = meta.get(p.id);
+    if (skip !== "cat" && st.cat.length && !st.cat.includes(p.collection)) return false;
+    if (skip !== "g" && st.g.length && !st.g.some((g) => m.g.includes(g))) return false;
+    if (skip !== "sz" && st.sz.length && !st.sz.some((x) => m.s.includes(x))) return false;
+    if (skip !== "col" && st.col.length && !st.col.some((x) => m.c.includes(x))) return false;
+    if (st.band) { const [lo, hi] = st.band.split("-").map(Number); if (p.price < lo || (hi && p.price >= hi)) return false; }
+    if (st.min && p.price < st.min) return false; if (st.max && p.price > st.max) return false;
+    if (st.rate && (p.rating || 0) < st.rate) return false;
+    if (st.us && p.ships !== "us") return false; if (st.stock && !(p.stock > 0)) return false; if (st.free && p.price < FREE_SHIP) return false;
+    if (st.deal === "today" && !p.promo) return false; if (st.deal === "any" && !offPct(p)) return false;
+    return true;
   };
-  app.innerHTML = `<div class="wrap">
-    ${!q ? `<div class="cat-banner">${cover ? `<div class="cat-thumb">${art(cover)}</div>` : ""}<div class="cat-info"><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/categories" data-link>Categories</a> / ${esc(title)}</div>
-      <h1>${esc(title)}</h1><p class="muted">${c ? esc(c.blurb || "") + " · " : ""}${list.length} products · 🚚 delivery from ${etaShort({ ships: "us" })}</p>
-      ${catPromo ? `<div class="promo-line big">⚡ ${esc(catPromo.label)} — ${catPromo.percent}% off · ends in <b data-ends="${catPromo.endsAt}">${timeLeft(catPromo.endsAt)}</b></div>`
-        : (() => { const s = c ? schedForCat(c.id) : null; return s ? `<div class="sched-line big">📅 ${esc(s.label)}: ${s.percent}% off — ${esc(s.text)}</div>` : ""; })()}</div></div>`
-    : `<div class="page-head"><div class="crumbs"><a href="/" data-link>Home</a> / Search</div><h1>${esc(title)}</h1></div>`}
-    ${q ? "" : `<div class="chips"><a class="chip ${id === "all" ? "on" : ""}" href="/collections/all" data-link>All</a>${COLLECTIONS.map((x) => `<a class="chip ${x.id === id ? "on" : ""}" href="/collections/${x.id}" data-link>${esc(x.name)}</a>`).join("")}</div>`}
-    ${voucherStrip(q ? null : id === "all" ? null : id)}
-    <div class="sort-tabs">${[["popular", "Popular"], ["latest", "Latest"], ["top", "Top sales"], ["deals", "Deals"]].map(([v, t]) => `<button data-sort="${v}">${t}</button>`).join("")}<button data-sort="price">Price <i>↕</i></button></div>
-    <div class="toolbar"><div class="filters">
-      <label><input type="checkbox" id="fStock" ${state.stock ? "checked" : ""}> In stock</label>
-      <label><input type="checkbox" id="fUs" ${state.us ? "checked" : ""}> Ships from US</label>
-      <select class="select" id="fMax"><option value="0">Any price</option>${[10, 20, 30, 50, 100].map((v) => `<option value="${v}" ${state.max === v ? "selected" : ""}>Under $${v}</option>`).join("")}</select></div>
-      <span class="muted" id="count"></span></div>
-    <div class="grid" id="results"></div><div style="height:56px"></div></div>`;
-  document.querySelectorAll("[data-sort]").forEach((t) => (t.onclick = () => {
-    state.sort = t.dataset.sort === "price" ? (state.sort === "price-asc" ? "price-desc" : "price-asc") : t.dataset.sort; apply();
-  }));
-  $("#fStock").onchange = (e) => { state.stock = e.target.checked; apply(); };
-  $("#fUs").onchange = (e) => { state.us = e.target.checked; apply(); };
-  $("#fMax").onchange = (e) => { state.max = Number(e.target.value); apply(); };
+  const sorter = { "price-asc": (a, b) => a.price - b.price, "price-desc": (a, b) => b.price - a.price, review: (a, b) => (b.rating || 0) - (a.rating || 0) || (b.reviews || 0) - (a.reviews || 0),
+    latest: (a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")), top: (a, b) => (b.sold || 0) - (a.sold || 0), deals: (a, b) => offPct(b) - offPct(a),
+    featured: (a, b) => (b.stock > 0) - (a.stock > 0) || ((b.images || []).length > 0) - ((a.images || []).length > 0) || (b.sold || 0) - (a.sold || 0) || (b.rating || 0) - (a.rating || 0) };
+  const syncUrl = () => {
+    const u = new URLSearchParams(); if (qRaw) u.set("q", qRaw);
+    if (st.sort !== "featured") u.set("sort", st.sort);
+    for (const k of ["cat", "g", "sz", "col"]) if (st[k].length) u.set(k, st[k].join(","));
+    if (st.band) u.set("band", st.band); if (st.min) u.set("min", st.min); if (st.max) u.set("max", st.max); if (st.rate) u.set("rate", st.rate);
+    for (const k of ["us", "stock", "free"]) if (st[k]) u.set(k, "1"); if (st.deal) u.set("deal", st.deal); if (st.page > 1) u.set("page", st.page);
+    history.replaceState(history.state, "", location.pathname + (u.toString() ? "?" + u : ""));
+  };
+  const chk = (key, val, label, n) => `<label class="fl-c"><input type="checkbox" data-f="${key}" value="${esc(val)}" ${st[key].includes(val) ? "checked" : ""}> ${esc(label)}${n != null ? ` <span>(${n})</span>` : ""}</label>`;
+  const sidebar = () => `<div class="fl-head"><b>Filters</b><button class="fl-x" id="flClose" aria-label="Close filters">✕</button></div>
+    ${(q || id === "all") && catC.size > 1 ? `<div class="fl-g"><h4>Department</h4>${[...catC.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => chk("cat", k, COLLECTIONS.find((x) => x.id === k)?.name || "Other", n)).join("")}</div>`
+      : !q && c ? `<div class="fl-g"><h4>Department</h4><a class="fl-link" href="/collections/all" data-link>‹ Any department</a><b class="fl-cur">${esc(c.name)}</b>${COLLECTIONS.filter((x) => x.id !== id).slice(0, 12).map((x) => `<a class="fl-link sub" href="/collections/${x.id}" data-link>${esc(x.name)}</a>`).join("")}</div>` : ""}
+    ${gC.size ? `<div class="fl-g"><h4>Gender</h4>${GENDERS.map(([n]) => n).filter((n) => gC.has(n)).map((n) => chk("g", n, n, gC.get(n))).join("")}</div>` : ""}
+    <div class="fl-g"><h4>Customer Reviews</h4>${[4, 3].map((r) => `<button class="fl-rate ${st.rate === r ? "on" : ""}" data-rate="${r}"><i>${"★".repeat(r)}${"☆".repeat(5 - r)}</i> & Up</button>`).join("")}</div>
+    ${sizes.length ? `<div class="fl-g"><h4>Size</h4><div class="fl-sizes">${sizes.map((x) => `<button class="fl-size ${st.sz.includes(x) ? "on" : ""}" data-sz="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>` : ""}
+    ${cC.size ? `<div class="fl-g"><h4>Color</h4><div class="fl-colors">${COLORS.filter(([n]) => cC.has(n)).map(([n, hex]) => `<button class="fl-col ${st.col.includes(n) ? "on" : ""}" data-col="${n}" title="${n} (${cC.get(n)})" style="--c:${hex}"></button>`).join("")}</div></div>` : ""}
+    <div class="fl-g"><h4>Price</h4>${PRICE_BANDS.map(([lo, hi, t]) => `<button class="fl-link ${st.band === lo + "-" + hi ? "on" : ""}" data-band="${lo}-${hi}">${t}</button>`).join("")}
+      <div class="fl-minmax"><input class="inp" id="fMin" inputmode="decimal" placeholder="$ Min" value="${st.min || ""}"><input class="inp" id="fMax" inputmode="decimal" placeholder="$ Max" value="${st.max || ""}"><button class="btn sm ghost" id="fGo">Go</button></div></div>
+    <div class="fl-g"><h4>Deals & Discounts</h4><button class="fl-link ${st.deal === "any" ? "on" : ""}" data-deal="any">All Discounts</button><button class="fl-link ${st.deal === "today" ? "on" : ""}" data-deal="today">Today's Deals (flash sale)</button></div>
+    <div class="fl-g"><h4>Delivery</h4><label class="fl-c"><input type="checkbox" data-t="us" ${st.us ? "checked" : ""}> Ships from US warehouse</label><label class="fl-c"><input type="checkbox" data-t="free" ${st.free ? "checked" : ""}> FREE shipping eligible</label><label class="fl-c"><input type="checkbox" data-t="stock" ${st.stock ? "checked" : ""}> In stock only</label></div>
+    <button class="btn ghost sm fl-clear" id="flClear">Clear all filters</button>`;
+  const activeN = () => st.cat.length + st.g.length + st.sz.length + st.col.length + (st.band ? 1 : 0) + (st.min || st.max ? 1 : 0) + (st.rate ? 1 : 0) + st.us + st.stock + st.free + (st.deal ? 1 : 0);
+  app.innerHTML = `<div class="az-res-top"><div class="wrap az-res-bar"><span id="resCount"></span>
+      <div class="flex" style="gap:8px"><button class="btn sm ghost fl-open" id="flOpen">⚙ Filters <span id="flN"></span></button>
+      <label class="az-sort">Sort by: <select id="sortSel">${SORTS.map(([v, t]) => `<option value="${v}" ${st.sort === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></div></div></div>
+    <div class="wrap az-res">
+      <aside class="az-filters" id="filters"></aside>
+      <section class="az-main">
+        ${!q && c ? `<div class="az-res-h"><div class="crumbs"><a href="/" data-link>Home</a> › <a href="/categories" data-link>Categories</a> › ${esc(title)}</div><h1>${esc(title)}</h1></div>` : `<div class="az-res-h"><h1>Results</h1><p class="muted">Check each product page for other buying options. Price and other details may vary based on product size and color.</p></div>`}
+        ${catPromo ? `<div class="promo-line big">⚡ ${esc(catPromo.label)} — ${catPromo.percent}% off · ends in <b data-ends="${catPromo.endsAt}">${timeLeft(catPromo.endsAt)}</b></div>` : ""}
+        ${voucherStrip(q ? null : id === "all" ? null : id)}
+        <div class="az-chips" id="chips"></div>
+        <div class="az-grid" id="results"></div><nav class="az-pages" id="pages"></nav></section></div>
+    <div class="fl-scrim" id="flScrim" hidden></div>`;
+  const draw = (scroll) => {
+    const all = base.filter((p) => pass(p)).sort(sorter[st.sort] || sorter.featured);
+    const pages = Math.max(1, Math.ceil(all.length / PER)); st.page = Math.min(st.page, pages);
+    const slice = all.slice((st.page - 1) * PER, st.page * PER);
+    $("#results").innerHTML = slice.length ? slice.map(rcard).join("") : `<div class="empty" style="grid-column:1/-1">No results match these filters. <button class="btn sm ghost" data-clear>Clear filters</button></div>`;
+    const from = all.length ? (st.page - 1) * PER + 1 : 0, to = Math.min(all.length, st.page * PER);
+    $("#resCount").innerHTML = `${from}-${to} of ${all.length.toLocaleString()} result${all.length === 1 ? "" : "s"}${q ? ` for <b class="az-q">"${esc(qRaw)}"</b>` : c ? ` in <b class="az-q">${esc(c.name)}</b>` : ""}`;
+    const n = activeN(); $("#flN").textContent = n ? `(${n})` : "";
+    const chips = [...st.cat.map((v) => ["cat", v, COLLECTIONS.find((x) => x.id === v)?.name || v]), ...st.g.map((v) => ["g", v, v]), ...st.sz.map((v) => ["sz", v, "Size " + v]), ...st.col.map((v) => ["col", v, v]),
+      ...(st.band ? [["band", "", PRICE_BANDS.find(([lo, hi]) => lo + "-" + hi === st.band)?.[2]]] : []), ...(st.min || st.max ? [["mm", "", `$${st.min || 0} – ${st.max ? "$" + st.max : "any"}`]] : []),
+      ...(st.rate ? [["rate", "", st.rate + "★ & up"]] : []), ...(st.deal ? [["deal", "", st.deal === "today" ? "Today's Deals" : "All Discounts"]] : []),
+      ...(st.us ? [["us", "", "US warehouse"]] : []), ...(st.free ? [["free", "", "FREE shipping"]] : []), ...(st.stock ? [["stock", "", "In stock"]] : [])];
+    $("#chips").innerHTML = chips.map(([k, v, t]) => `<button class="az-chip" data-rm="${k}" data-v="${esc(v)}">${esc(t)} ✕</button>`).join("") + (chips.length > 1 ? `<button class="az-chip clear" data-clear>Clear all</button>` : "");
+    const pg = (i, t = i, dis) => `<button class="${i === st.page ? "on" : ""}" data-page="${i}" ${dis ? "disabled" : ""}>${t}</button>`;
+    const nums = [...new Set([1, st.page - 1, st.page, st.page + 1, pages].filter((i) => i >= 1 && i <= pages))].sort((a, b) => a - b);
+    $("#pages").innerHTML = pages > 1 ? pg(st.page - 1, "‹ Previous", st.page === 1) + nums.map((i, k) => (k && i - nums[k - 1] > 1 ? `<span>…</span>` : "") + pg(i)).join("") + pg(st.page + 1, "Next ›", st.page === pages) : "";
+    $("#filters").innerHTML = sidebar(); bindSide();
+    syncUrl();
+    if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const reset = () => { Object.assign(st, { cat: [], g: [], sz: [], col: [], band: "", min: 0, max: 0, rate: 0, us: false, stock: false, free: false, deal: "", page: 1 }); draw(); };
+  const toggle = (k, v) => { st[k] = st[k].includes(v) ? st[k].filter((x) => x !== v) : [...st[k], v]; st.page = 1; draw(); };
+  const closeF = () => { document.body.classList.remove("fl-show"); $("#flScrim").hidden = true; };
+  function bindSide() {
+    const f = $("#filters");
+    f.querySelectorAll("[data-f]").forEach((el) => (el.onchange = () => toggle(el.dataset.f, el.value)));
+    f.querySelectorAll("[data-t]").forEach((el) => (el.onchange = () => { st[el.dataset.t] = el.checked; st.page = 1; draw(); }));
+    f.querySelectorAll("[data-rate]").forEach((el) => (el.onclick = () => { const r = Number(el.dataset.rate); st.rate = st.rate === r ? 0 : r; st.page = 1; draw(); }));
+    f.querySelectorAll("[data-sz]").forEach((el) => (el.onclick = () => toggle("sz", el.dataset.sz)));
+    f.querySelectorAll("[data-col]").forEach((el) => (el.onclick = () => toggle("col", el.dataset.col)));
+    f.querySelectorAll("[data-band]").forEach((el) => (el.onclick = () => { st.band = st.band === el.dataset.band ? "" : el.dataset.band; st.min = st.max = 0; st.page = 1; draw(); }));
+    f.querySelectorAll("[data-deal]").forEach((el) => (el.onclick = () => { st.deal = st.deal === el.dataset.deal ? "" : el.dataset.deal; st.page = 1; draw(); }));
+    $("#fGo").onclick = () => { st.min = Math.max(0, parseFloat($("#fMin").value) || 0); st.max = Math.max(0, parseFloat($("#fMax").value) || 0); st.band = ""; st.page = 1; draw(); };
+    $("#flClear").onclick = reset; $("#flClose").onclick = closeF;
+  }
+  $("#sortSel").onchange = (e) => { st.sort = e.target.value; st.page = 1; draw(); };
+  $("#flOpen").onclick = () => { document.body.classList.add("fl-show"); $("#flScrim").hidden = false; };
+  $("#flScrim").onclick = closeF;
+  app.querySelector(".az-main").addEventListener("click", (e) => {
+    const pb = e.target.closest("[data-page]"); if (pb && !pb.disabled) { st.page = Number(pb.dataset.page); return draw(true); }
+    if (e.target.closest("[data-clear]")) return reset();
+    const rm = e.target.closest("[data-rm]"); if (!rm) return;
+    const k = rm.dataset.rm, v = rm.dataset.v;
+    if (["cat", "g", "sz", "col"].includes(k)) st[k] = st[k].filter((x) => x !== v); else if (k === "mm") st.min = st.max = 0; else if (k === "band" || k === "deal") st[k] = ""; else if (k === "rate") st.rate = 0; else st[k] = false;
+    st.page = 1; draw();
+  });
   bindVouchers();
-  apply();
+  draw();
 }
 
 /* ---------- Premium Video: swipeable feed of product videos ---------- */
@@ -814,7 +914,8 @@ function route() {
   else notFound();
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === pathname));
   $("#backBtn").hidden = pathname === "/";
-  document.body.classList.toggle("home-wide", pathname === "/");
+  document.body.classList.toggle("home-wide", pathname === "/" || pathname === "/search" || pathname.startsWith("/collections/"));
+  document.body.classList.remove("fl-show");
 }
 // Each in-store page remembers how deep we are, so Back returns to the previous store page
 // (or a sensible parent page when someone lands straight on a product from Google or a shared link).
