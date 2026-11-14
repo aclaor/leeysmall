@@ -179,7 +179,7 @@ async function ensureCartOfferVoucher(env, o) {
   await env.DB.prepare(`INSERT INTO discounts (code, percent, type, active, show, label, scope) VALUES (?,?, 'percent', ?, 0, ?, 'all')
     ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, active=excluded.active, label=excluded.label`).bind(o.code, o.percent, o.on ? 1 : 0, `${o.percent}% off your order`).run();
 }
-const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "checkout", "buy"]);
+const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "checkout", "buy", "ptime", "vtime"]);
 const bustCache = (env) => setSetting(env, "cache_v", String(Date.now())).catch(() => {});
 async function handleRoutes(req, env, ctx) {
   const url = new URL(req.url), path = url.pathname, m = req.method;
@@ -282,8 +282,10 @@ async function handleRoutes(req, env, ctx) {
     try {
       const b = await body(req), day = new Date().toISOString().slice(0, 10);
       const evs = (Array.isArray(b.e) ? b.e : [b]).slice(0, 10).filter((x) => x && TRACK_KINDS.has(x.k));
-      if (evs.length) await env.DB.batch(evs.map((x) => env.DB.prepare("INSERT INTO stats (day,kind,target,n) VALUES (?,?,?,1) ON CONFLICT(day,kind,target) DO UPDATE SET n=n+1")
-        .bind(day, x.k, x.k === "search" ? str(x.t || "-", 80).toLowerCase() : str(x.t || "-", 80))));
+      // time kinds (ptime = seconds on a product page, vtime = seconds of a visit) add their seconds; the rest add 1
+      if (evs.length) await env.DB.batch(evs.map((x) => { const v = x.k.endsWith("time") ? Math.min(1800, Math.max(0, Math.round(Number(x.v) || 0))) : 1;
+        return env.DB.prepare("INSERT INTO stats (day,kind,target,n) VALUES (?,?,?,?) ON CONFLICT(day,kind,target) DO UPDATE SET n=n+excluded.n")
+          .bind(day, x.k, x.k === "search" ? str(x.t || "-", 80).toLowerCase() : str(x.t || "-", 80), v); }));
     } catch {}
     return new Response(null, { status: 204 });
   }

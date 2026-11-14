@@ -88,7 +88,19 @@ function flushTrack() {
   try { if (!(navigator.sendBeacon && navigator.sendBeacon("/api/track", new Blob([data], { type: "application/json" })))) fetch("/api/track", { method: "POST", body: data, headers: { "content-type": "application/json" }, keepalive: true }); } catch {}
   if (TQ.length) flushTrack();
 }
-addEventListener("pagehide", flushTrack); document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushTrack());
+// Time on page: counts only while the tab is visible. Product time is per product; visit time is the whole session.
+const timer = { pid: null, pt: 0, vt: Date.now() };
+function endProductTime() { if (timer.pid && timer.pt) { const s = (Date.now() - timer.pt) / 1000; if (s >= 1) TQ.push({ k: "ptime", t: timer.pid, v: Math.min(600, s) }); } timer.pid = null; timer.pt = 0; }
+function startProductTime(id) { endProductTime(); timer.pid = id; timer.pt = document.visibilityState === "visible" ? Date.now() : 0; }
+function pauseTime() {
+  if (timer.pid && timer.pt) { const s = (Date.now() - timer.pt) / 1000; if (s >= 1) TQ.push({ k: "ptime", t: timer.pid, v: Math.min(600, s) }); timer.pt = 0; }
+  if (timer.vt) { const s = (Date.now() - timer.vt) / 1000; if (s >= 1) TQ.push({ k: "vtime", t: "-", v: Math.min(1800, s) }); timer.vt = 0; }
+  flushTrack();
+}
+function resumeTime() { timer.vt = Date.now(); if (timer.pid) timer.pt = Date.now(); }
+addEventListener("pagehide", pauseTime);
+setInterval(() => { if (document.visibilityState === "visible") { pauseTime(); resumeTime(); } }, 15000); // send time in small pieces so it isn't lost if the tab is closed
+document.addEventListener("visibilitychange", () => (document.visibilityState === "hidden" ? pauseTime() : resumeTime()));
 const offerCode = () => { try { return CONFIG.cartOffer && localStorage.getItem("lp_offer") === CONFIG.cartOffer.code ? CONFIG.cartOffer.code : ""; } catch { return ""; } };
 function cartOfferPopup() {
   const o = CONFIG.cartOffer; if (!o) return;
@@ -671,7 +683,7 @@ function deliveryText(p, country) {
 }
 
 function product(id) {
-  trk("product", id);
+  trk("product", id); startProductTime(id);
   const p = PRODUCTS.find((x) => x.id === id);
   if (!p) return notFound();
   document.title = p.title + " — LeeysPremium";
@@ -947,6 +959,7 @@ function route() {
   $("#backBtn").hidden = pathname === "/";
   document.body.classList.toggle("home-wide", pathname === "/" || pathname === "/search" || pathname.startsWith("/collections/"));
   document.body.classList.remove("fl-show");
+  if (!/^\/products\//.test(pathname)) { endProductTime(); if (TQ.length) { clearTimeout(trk.tm); trk.tm = setTimeout(flushTrack, 250); } }
 }
 // Each in-store page remembers how deep we are, so Back returns to the previous store page
 // (or a sensible parent page when someone lands straight on a product from Google or a shared link).
