@@ -32,7 +32,7 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["reviews", "Reviews"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
@@ -45,9 +45,24 @@ window.addEventListener("hashchange", () => { const t = location.hash.slice(1); 
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, insights, orders, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, insights, orders, reviews, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
+
+/* ---------- Reviews (verified buyers only) ---------- */
+async function reviews() {
+  const list = await api("/api/admin/reviews");
+  const st = (n) => "★".repeat(n) + "☆".repeat(5 - n);
+  main().innerHTML = `<h1>Reviews</h1><p class="muted" style="margin:-6px 0 16px">Only customers with a paid order can review the products they bought (they enter their order number and email). Reviews go live straight away; hide any that break your rules. You can't edit what a customer wrote — that keeps reviews honest.</p>
+    <div class="panel">${list.length ? `<div class="tbl-wrap"><table><tr><th>Rating</th><th>Product</th><th>Review</th><th>Customer</th><th>Date</th><th>Status</th><th></th></tr>${list.map((r) => `<tr>
+      <td style="color:#ffa41c;white-space:nowrap">${st(r.rating)}</td><td><a href="/products/${esc(r.product_id)}" target="_blank" style="color:#fff">${esc((r.title || r.product_id).slice(0, 50))}</a>${r.variant ? `<div class="muted" style="font-size:12px">${esc(r.variant)}</div>` : ""}</td>
+      <td style="max-width:360px">${r.body ? esc(r.body) : `<span class="muted">(stars only)</span>`}</td><td>${esc(r.name || "")}<div class="muted" style="font-size:12px">#${esc(r.order_id)}</div></td>
+      <td style="white-space:nowrap">${esc(r.created_at.slice(0, 10))}</td><td>${r.status === "hidden" ? `<span class="badge">Hidden</span>` : `<span class="badge" style="background:rgba(73,215,154,.15);color:#49d79a">Live</span>`}</td>
+      <td style="white-space:nowrap"><button class="btn sm ghost" data-rv="${r.id}" data-to="${r.status === "hidden" ? "published" : "hidden"}">${r.status === "hidden" ? "Show" : "Hide"}</button> <button class="btn sm ghost" data-rvdel="${r.id}">Delete</button></td></tr>`).join("")}</table></div>`
+      : `<p class="muted">No reviews yet. After a customer's order is paid, they can rate it from the order tracking page or on the product's page. Stars appear on your products only once real reviews come in.</p>`}</div>`;
+  main().querySelectorAll("[data-rv]").forEach((b) => (b.onclick = async () => { await api("/api/admin/reviews/" + b.dataset.rv, "PATCH", { status: b.dataset.to }); toast(b.dataset.to === "hidden" ? "Review hidden" : "Review is live"); reviews(); }));
+  main().querySelectorAll("[data-rvdel]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this review permanently?")) return; await api("/api/admin/reviews/" + b.dataset.rvdel, "DELETE"); toast("Review deleted"); reviews(); }));
+}
 
 /* ---------- Insights: what visitors look at (anonymous daily counts) ---------- */
 const flag = (cc) => /^[A-Z]{2}$/.test(cc) && cc !== "XX" && cc !== "T1" ? String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : "🌐";

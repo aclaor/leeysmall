@@ -33,6 +33,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS promos (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, percent REAL NOT NULL, scope TEXT NOT NULL DEFAULT 'all', target TEXT,
     starts_at TEXT DEFAULT (datetime('now')), ends_at TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chats_last ON chats(last_at)`,
+  `CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL, product_id TEXT NOT NULL, variant TEXT, rating INTEGER NOT NULL,
+    body TEXT, name TEXT, status TEXT DEFAULT 'published', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), UNIQUE(order_id, product_id))`,
+  `CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id, status)`,
   `CREATE TABLE IF NOT EXISTS stats (day TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, n INTEGER DEFAULT 0, PRIMARY KEY (day, kind, target))`,
 ];
 
@@ -43,6 +46,10 @@ export function ensureSchema(env) {
     const { n } = await env.DB.prepare("SELECT COUNT(*) n FROM products").first();
     if (n === 0) await seed(env);
     await migrateToGeneralStore(env);
+    // One-time: clear placeholder ratings so only real reviews ever count
+    if (!(await env.DB.prepare("SELECT 1 FROM settings WHERE key='migr_reviews_v1'").first())) await env.DB.batch([
+      env.DB.prepare("UPDATE products SET rating=0, reviews=0 WHERE id NOT IN (SELECT product_id FROM reviews WHERE status='published')"),
+      env.DB.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES ('migr_reviews_v1', datetime('now'))")]);
     for (const sql of ["ALTER TABLE collections ADD COLUMN cover TEXT", "ALTER TABLE products ADD COLUMN sold INTEGER DEFAULT 0",
       "ALTER TABLE discounts ADD COLUMN min_spend REAL DEFAULT 0", "ALTER TABLE discounts ADD COLUMN show INTEGER DEFAULT 0",
       "ALTER TABLE promos ADD COLUMN recur INTEGER DEFAULT 0", "ALTER TABLE products ADD COLUMN video TEXT",
@@ -86,7 +93,7 @@ const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d
 export function toPublic(r) {
   return {
     id: r.id, title: r.title, description: r.description, collection: r.collection, price: r.price,
-    compareAt: null, stock: r.stock, rating: null, reviews: 0, // no review system yet: never show placeholder ratings badge: r.badge, sold: r.sold || 0, createdAt: r.created_at, video: r.video || null,
+    compareAt: null, stock: r.stock, rating: r.reviews > 0 ? Math.round(r.rating * 10) / 10 : null, reviews: r.reviews > 0 ? r.reviews : 0, // only real, verified-buyer reviews badge: r.badge, sold: r.sold || 0, createdAt: r.created_at, video: r.video || null,
     hue: r.hue, icon: r.icon, ships: r.ships, images: parse(r.images, []), variants: parse(r.variants, []),
     variantImages: Object.fromEntries(Object.entries(parse(r.variant_map, {}) || {}).filter(([, v]) => v && /^https?:\/\//.test(v.image || "")).map(([k, v]) => [k, v.image])),
   };

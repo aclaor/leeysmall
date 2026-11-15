@@ -468,7 +468,7 @@ function rcard(p) {
       ${p.promo ? `<span class="rc-flag">⚡ ${p.promo.percent}% off</span>` : p.video ? `<span class="rc-flag vid">▶ Video</span>` : ""}${p.stock === 0 ? `<span class="rc-flag out">Sold out</span>` : ""}
       ${p.stock > 0 ? `<button class="rc-add" data-add="${p.id}" aria-label="Add to cart" title="Add to cart">+</button>` : ""}</div>
     <div class="rc-body">${(() => { const cc = COLLECTIONS.find((x) => x.id === p.collection); return cc ? `<a class="rc-cat" href="/collections/${cc.id}" data-link>${esc(cc.name)}</a>` : ""; })()}<a class="rc-t" href="/products/${p.id}" data-link>${esc(p.title)}</a>
-      <div class="rc-meta">${r && p.reviews > 0 ? `<span class="rc-stars"><b>${r.toFixed(1)}</b> <i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${p.reviews ? ` <span>(${p.reviews >= 1000 ? (p.reviews / 1000).toFixed(1) + "K" : p.reviews})</span>` : ""}</span>` : ""}${sw > 1 ? `<span class="rc-sw">+${sw} options</span>` : ""}</div>
+      <div class="rc-meta">${r && p.reviews > 0 ? `<span class="rc-stars"><b>${r.toFixed(1)}</b> ${starIcons(r)}${p.reviews ? ` <span>(${p.reviews >= 1000 ? (p.reviews / 1000).toFixed(1) + "K" : p.reviews})</span>` : ""}</span>` : ""}${sw > 1 ? `<span class="rc-sw">+${sw} options</span>` : ""}</div>
       ${p.sold >= 50 ? `<div class="rc-sold">${p.sold >= 1000 ? (p.sold / 1000).toFixed(1) + "K+" : p.sold + "+"} bought</div>` : ""}
       <div class="rc-price">${off ? `<span class="rc-off">-${off}%</span>` : ""}<span class="rc-now"><sup>$</sup>${Math.floor(p.price)}<sup>${String(Math.round((p.price % 1) * 100)).padStart(2, "0")}</sup></span>${off ? `<s>${money(p.compareAt)}</s>` : ""}</div>
       ${p.promo ? `<div class="promo-line">Ends in <span data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</span></div>` : ""}
@@ -686,6 +686,7 @@ function product(id) {
   trk("product", id); startProductTime(id);
   const p = PRODUCTS.find((x) => x.id === id);
   if (!p) return notFound();
+  setTimeout(() => loadReviews(p), 0);
   document.title = p.title + " — LeeysPremium";
   const sel = Object.fromEntries(p.variants.map((v) => [v.name, v.options[0]]));
   let img = 0, qty = 1, country = "US";
@@ -704,7 +705,7 @@ function product(id) {
   app.innerHTML = `<div class="wrap"><div class="pdp">
     <div class="gallery"><div class="main" id="mainImg">${p.video ? videoTag(p, true) : art(p, 0)}</div><div class="thumbs">${p.video ? `<button data-video class="on vthumb" aria-label="Play video">${art(p, 0)}<span>▶</span></button>` : ""}${[...Array(Math.min(4, p.images?.length || 4)).keys()].map((i) => `<button data-img="${i}" class="${i === 0 && !p.video ? "on" : ""}" aria-label="Image ${i + 1}">${art(p, i)}</button>`).join("")}</div></div>
     <div><button class="back-link" id="pdpBack">← Back</button><div class="crumbs"><a href="/" data-link>Home</a> / <a href="/collections/${coll.id}" data-link>${esc(coll.name)}</a></div>
-      <h1>${esc(p.title)}</h1>${p.sold ? `<div class="muted" style="font-size:14px">${p.sold.toLocaleString()} sold</div>` : ""}
+      <h1>${esc(p.title)}</h1><div class="pdp-rate">${p.reviews > 0 ? `<a href="#reviews" class="pdp-stars" data-jump="reviews">${starIcons(p.rating)} <b>${p.rating.toFixed(1)}</b> <span>${p.reviews} verified review${p.reviews === 1 ? "" : "s"}</span></a>` : ""}${p.sold ? `<span class="muted" style="font-size:14px">${p.sold.toLocaleString()} sold</span>` : ""}</div>
       ${p.promo ? `<div class="flash-bar"><span>⚡ ${esc(p.promo.label)}</span><span>Ends in <b data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</b></span></div>`
         : (() => { const s = schedFor(p); return s ? `<div class="sched-line big" style="margin-top:12px">📅 ${esc(s.label)}: ${s.percent}% off this item — ${esc(s.text)}</div>` : ""; })()}
       <div class="price ${off ? "sale" : ""}" style="margin:14px 0"><b>${money(p.price)}</b>${p.compareAt && p.compareAt > p.price ? `<s>${money(p.compareAt)}</s><span class="save">Save ${off}%</span>` : ""}</div>
@@ -725,6 +726,7 @@ function product(id) {
       <details class="acc"><summary>Shipping</summary><p>US orders ship from our US warehouses where available (3–7 business days). International orders ship worldwide in 7–20 business days with tracking. Free US shipping over $${FREE_SHIP}.</p></details>
       <details class="acc"><summary>Returns</summary><p>Not happy? Return it within 30 days of delivery for a full refund. Damaged or faulty items are replaced free.</p></details>
     </div></div>
+    <section class="section" id="reviews" style="padding-top:0"><div class="section-head"><h2>Customer reviews</h2></div><div id="revBox" class="rev-box"><p class="muted">Loading reviews…</p></div></section>
     <section class="section" style="padding-top:0"><div class="section-head"><h2>You may also like</h2><a class="hlink more" href="/collections/${coll.id}" data-link>More in ${esc(coll.name)} ›</a></div><div class="grid" id="related">${related.slice(0, shown).map(card).join("")}</div>
       ${related.length > shown ? `<div style="text-align:center;margin-top:26px"><button class="btn ghost" id="moreRelated">Show more</button></div>` : ""}</section></div>`;
   const variantStr = () => Object.values(sel).join(" / ");
@@ -888,7 +890,7 @@ function checkout() {
         localId = r.orderId; return r.paypalOrderId;
       },
       onApprove: async () => {
-        try { const r = await api("/api/checkout/capture", { orderId: localId }); if (bag === cart) { cart.items = []; cart.save(); } else { try { sessionStorage.removeItem("lp_buynow"); } catch {} } trk("buy"); go("/thank-you?order=" + encodeURIComponent(r.orderId)); }
+        try { const r = await api("/api/checkout/capture", { orderId: localId }); if (bag === cart) { cart.items = []; cart.save(); } else { try { sessionStorage.removeItem("lp_buynow"); } catch {} } trk("buy"); rememberOrder(r.orderId, form.email.value); go("/thank-you?order=" + encodeURIComponent(r.orderId)); }
         catch (e) { err(e.message + ". You have not been charged — please try again."); }
       },
       onError: () => err("Payment couldn't be completed. Please try again or use another method."),
@@ -898,14 +900,62 @@ function checkout() {
 
 function thankYou(params) {
   const n = esc(params.get("order") || "");
-  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
+  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><p class="muted">Once your items arrive, you can rate them from the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> or on each product's page.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
+}
+
+/* ---------- Verified-buyer reviews ---------- */
+const starIcons = (r) => `<i class="stars-i" style="--r:${(Math.max(0, Math.min(5, r)) / 5) * 100}%" aria-label="${r.toFixed(1)} out of 5 stars">★★★★★</i>`;
+document.addEventListener("click", (e) => { const j = e.target.closest("[data-jump]"); if (!j) return; e.preventDefault(); document.getElementById(j.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); });
+const myOrders = () => { try { return JSON.parse(localStorage.getItem("lp_orders") || "[]"); } catch { return []; } };
+function rememberOrder(id, email) { try { const o = myOrders().filter((x) => x.id !== id); o.unshift({ id, email: String(email).trim().toLowerCase() }); localStorage.setItem("lp_orders", JSON.stringify(o.slice(0, 20))); } catch {} }
+async function loadReviews(p) {
+  const box = $("#revBox"); if (!box) return;
+  let d; try { d = await api("/api/reviews?product=" + encodeURIComponent(p.id)); } catch { d = { count: 0, list: [], hist: [0, 0, 0, 0, 0], avg: 0 }; }
+  if (!$("#revBox")) return;
+  box.innerHTML = `<div class="rev-sum">${d.count ? `<div class="rev-avg"><b>${d.avg.toFixed(1)}</b>${starIcons(d.avg)}<span>${d.count} verified review${d.count === 1 ? "" : "s"}</span></div>
+      <div class="rev-hist">${d.hist.map((n, i) => `<div><span>${5 - i} star</span><i><b style="width:${d.count ? (n / d.count) * 100 : 0}%"></b></i><span>${d.count ? Math.round((n / d.count) * 100) : 0}%</span></div>`).join("")}</div>`
+      : `<div class="rev-empty"><b>No reviews yet</b><span>Reviews here come only from verified buyers of this product.</span></div>`}
+      <div class="rev-cta"><b>Bought this product?</b><span>Share your thoughts with other customers.</span><button class="btn accent" id="revWrite">★ Write a review</button></div></div>
+    <div class="rev-list">${d.list.map((r) => `<div class="rev-item"><div class="rev-who"><span class="rev-av">${esc((r.name || "C")[0].toUpperCase())}</span><b>${esc(r.name || "Customer")}</b></div>
+      <div class="rev-line">${starIcons(r.rating)} <span class="rev-ver">✔ Verified purchase</span></div>
+      <div class="muted rev-meta">Reviewed ${new Date(r.created_at.replace(" ", "T") + "Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}${r.variant ? " · " + esc(r.variant) : ""}</div>
+      ${r.body ? `<p>${esc(r.body)}</p>` : ""}</div>`).join("")}</div>`;
+  $("#revWrite").onclick = () => reviewModal(p);
+}
+function reviewModal(p, preset = {}) {
+  const known = preset.order ? preset : myOrders()[0] || {};
+  const m = document.createElement("div"); m.className = "offer-bg";
+  m.innerHTML = `<form class="offer rev-form" novalidate><button type="button" class="offer-x" aria-label="Close">✕</button>
+    <h3>Rate this product</h3><p class="muted" style="margin:0 0 12px">${esc(p.title)}</p>
+    <div class="rev-pick" role="radiogroup" aria-label="Your rating">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}</div><div class="muted" id="rpTxt" style="height:18px;font-size:13px"></div>
+    <textarea class="inp" name="body" rows="4" maxlength="2000" placeholder="What did you like or dislike? How was the quality and delivery? (optional)"></textarea>
+    <input class="inp" name="name" maxlength="40" placeholder="Name to show (optional — default: first name + initial)">
+    <div class="rev-verify ${preset.order ? "hide" : ""}"><span class="muted" style="font-size:12px">Only verified buyers can review. Enter the order number and email from your purchase.</span>
+      <input class="inp" name="order" placeholder="Order number, e.g. LP7K2QX9A1B" value="${esc(known.order || known.id || "")}"><input class="inp" name="email" type="email" placeholder="Email used at checkout" value="${esc(known.email || "")}"></div>
+    <div id="rvErr" class="note err" hidden></div><button class="btn accent block">Submit review</button></form>`;
+  document.body.appendChild(m);
+  let rating = preset.rating || 0; const f = m.querySelector("form"), words = ["", "Hated it", "Didn't like it", "It's OK", "Liked it", "Loved it"];
+  if (preset.body) f.body.value = preset.body;
+  const paint = (n) => { m.querySelectorAll("[data-star]").forEach((b) => b.classList.toggle("on", Number(b.dataset.star) <= n)); $("#rpTxt", m).textContent = words[n] || ""; };
+  m.querySelectorAll("[data-star]").forEach((b) => { b.onclick = () => { rating = Number(b.dataset.star); paint(rating); }; b.onmouseenter = () => paint(Number(b.dataset.star)); b.onmouseleave = () => paint(rating); });
+  paint(rating);
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x")) m.remove(); };
+  f.onsubmit = async (e) => {
+    e.preventDefault(); const err = $("#rvErr", m); err.hidden = true;
+    if (!rating) { err.textContent = "Please choose 1 to 5 stars."; err.hidden = false; return; }
+    try {
+      await api("/api/reviews", { order: f.order.value, email: f.email.value, product: p.id, rating, body: f.body.value, name: f.name.value });
+      rememberOrder(f.order.value.trim().toUpperCase().replace(/^#/, ""), f.email.value);
+      m.remove(); toast("Thank you! Your review is live."); p.reviews = p.reviews || 0; if ($("#revBox")) loadReviews(p); if (preset.done) preset.done();
+    } catch (er) { err.textContent = er.message; err.hidden = false; if (/order/i.test(er.message)) m.querySelector(".rev-verify").classList.remove("hide"); }
+  };
 }
 
 const STATUS_TEXT = { paid: "Payment received", processing: "Preparing your order", action_needed: "Preparing your order", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", refunded: "Refunded" };
 function track(params) {
   document.title = "Track your order — LeeysPremium";
   app.innerHTML = `<div class="wrap prose"><h1>Track your order</h1><p>Enter the order number from your confirmation and the email you used at checkout.</p>
-    <form class="card-box" id="tForm"><div class="field"><input name="id" required placeholder="Order number, e.g. LP7K2QX9A1B" value="${esc(params.get("order") || "")}"></div><div class="field"><input name="email" type="email" required placeholder="Email used at checkout"></div><button class="btn block">Track</button></form><div id="tOut"></div></div>`;
+    <form class="card-box" id="tForm"><div class="field"><input name="id" required placeholder="Order number, e.g. LP7K2QX9A1B" value="${esc(params.get("order") || "")}"></div><div class="field"><input name="email" type="email" required placeholder="Email used at checkout" value="${esc((myOrders().find((x) => x.id === (params.get("order") || "").toUpperCase()) || {}).email || "")}"></div><button class="btn block">Track</button></form><div id="tOut"></div></div>`;
   $("#tForm").onsubmit = async (e) => {
     e.preventDefault(); const f = e.target, out = $("#tOut");
     try {
@@ -915,8 +965,13 @@ function track(params) {
         <div class="bar" style="margin:14px 0 6px"><i style="width:${((cur + 1) / steps.length) * 100}%"></i></div>
         <div class="row-between muted" style="font-size:12px">${steps.map((s) => `<span>${STATUS_TEXT[s]}</span>`).join("")}</div>
         ${o.tracking_number ? `<p style="margin-top:16px">Tracking number: <b>${esc(o.tracking_number)}</b>${o.tracking_carrier ? ` (${esc(o.tracking_carrier)})` : ""}<br><a style="text-decoration:underline" target="_blank" rel="noopener" href="https://t.17track.net/en#nums=${encodeURIComponent(o.tracking_number)}">Follow your package →</a></p>` : `<p class="muted" style="margin-top:16px">Your tracking number will appear here once the order ships.</p>`}
-        ${o.items.map((l) => `<div class="row-between" style="font-size:14px;padding:6px 0;border-top:1px solid var(--line)"><span>${l.qty} × ${esc(l.title)}${l.variant ? " · " + esc(l.variant) : ""}</span><span>${money(l.price * l.qty)}</span></div>`).join("")}
+        ${o.items.map((l, i) => { const rv = (o.reviews || []).find((r) => r.product_id === l.id), live = PRODUCTS.find((x) => x.id === l.id);
+          return `<div class="row-between" style="font-size:14px;padding:8px 0;border-top:1px solid var(--line);gap:10px;flex-wrap:wrap"><span style="flex:1;min-width:180px">${l.qty} × ${esc(l.title)}${l.variant ? " · " + esc(l.variant) : ""}</span>
+            ${o.canReview && live && !l.gift ? (rv ? `<button class="btn sm ghost" data-rate-i="${i}">${starIcons(rv.rating)} Edit review</button>` : `<button class="btn sm accent" data-rate-i="${i}">★ Rate this product</button>`) : ""}<span>${money(l.price * l.qty)}</span></div>`; }).join("")}
         <div class="row-between" style="font-weight:700;padding-top:8px"><span>Total</span><span>${money(o.total)}</span></div></div>`;
+      rememberOrder(o.id, f.email.value);
+      out.querySelectorAll("[data-rate-i]").forEach((b) => (b.onclick = () => { const l = o.items[Number(b.dataset.rateI)], rv = (o.reviews || []).find((r) => r.product_id === l.id);
+        reviewModal(PRODUCTS.find((x) => x.id === l.id), { order: o.id, email: f.email.value, rating: rv?.rating, body: rv?.body, done: () => f.requestSubmit() }); }));
     } catch (er) { out.innerHTML = `<p class="note err">${esc(er.message)}</p>`; }
   };
 }

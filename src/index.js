@@ -180,6 +180,11 @@ async function ensureCartOfferVoucher(env, o) {
     ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, active=excluded.active, label=excluded.label`).bind(o.code, o.percent, o.on ? 1 : 0, `${o.percent}% off your order`).run();
 }
 const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "checkout", "buy", "ptime", "vtime", "country", "city"]);
+const REVIEWABLE = new Set(["paid", "processing", "action_needed", "shipped", "delivered"]);
+async function refreshRating(env, pid) {
+  await env.DB.prepare(`UPDATE products SET rating=COALESCE((SELECT AVG(rating) FROM reviews WHERE product_id=?1 AND status='published'),0),
+    reviews=(SELECT COUNT(*) FROM reviews WHERE product_id=?1 AND status='published') WHERE id=?1`).bind(pid).run();
+}
 const bustCache = (env) => setSetting(env, "cache_v", String(Date.now())).catch(() => {});
 async function handleRoutes(req, env, ctx) {
   const url = new URL(req.url), path = url.pathname, m = req.method;
@@ -345,7 +350,32 @@ async function handleRoutes(req, env, ctx) {
     if (!o) return bad("We couldn't find that order. Check the number and email.", 404);
     const x = orderOut(o);
     return json({ id: x.id, status: x.status, created_at: x.created_at, shipped_at: x.shipped_at, total: x.total, country: x.country,
-      items: x.items.map((l) => ({ title: l.title, variant: l.variant, qty: l.qty, price: l.price })), tracking_number: x.tracking_number, tracking_carrier: x.tracking_carrier });
+      items: x.items.map((l) => ({ id: l.id, title: l.title, variant: l.variant, qty: l.qty, price: l.price, gift: !!l.gift })), tracking_number: x.tracking_number, tracking_carrier: x.tracking_carrier,
+      canReview: REVIEWABLE.has(x.status), reviews: (await env.DB.prepare("SELECT product_id, rating, body FROM reviews WHERE order_id=?").bind(x.id).all()).results });
+  }
+
+  /* ---------- verified-buyer reviews ---------- */
+  if (path === "/api/reviews" && m === "GET") {
+    const pid = str(url.searchParams.get("product"), 120);
+    const list = (await env.DB.prepare("SELECT rating, body, name, variant, created_at FROM reviews WHERE product_id=? AND status='published' ORDER BY created_at DESC LIMIT 100").bind(pid).all()).results;
+    const hist = [5, 4, 3, 2, 1].map((n) => list.filter((r) => r.rating === n).length);
+    return json({ count: list.length, avg: list.length ? Math.round((list.reduce((t, r) => t + r.rating, 0) / list.length) * 10) / 10 : 0, hist, list });
+  }
+  if (path === "/api/reviews" && m === "POST") {
+    const b = await body(req);
+    const oid = str(b.order, 30).toUpperCase().replace(/^#/, ""), email = str(b.email, 200).toLowerCase().trim(), pid = str(b.product, 120);
+    const rating = Math.round(Number(b.rating)); if (!(rating >= 1 && rating <= 5)) return bad("Please choose 1 to 5 stars.");
+    const o = await env.DB.prepare("SELECT * FROM orders WHERE id=? AND email=?").bind(oid, email).first();
+    if (!o) return bad("We couldn't find that order. Check the order number and email.", 404);
+    if (!REVIEWABLE.has(o.status)) return bad("You can review once your order is paid.", 403);
+    const line = parse(o.items, []).find((l) => l.id === pid && !l.gift);
+    if (!line) return bad("This product isn't in that order.", 403);
+    const nm = str(b.name, 40).trim() || (() => { const a = parse(o.address, {}); const f = (a.firstName || o.name || "Customer").trim().split(/\s+/)[0]; const l = (a.lastName || "").trim(); return f + (l ? " " + l[0].toUpperCase() + "." : ""); })();
+    await env.DB.prepare(`INSERT INTO reviews (order_id, product_id, variant, rating, body, name) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(order_id, product_id) DO UPDATE SET rating=excluded.rating, body=excluded.body, name=excluded.name, updated_at=datetime('now')`)
+      .bind(oid, pid, line.variant || null, rating, str(b.body, 2000).trim() || null, nm).run();
+    await refreshRating(env, pid); await bustCache(env);
+    return json({ ok: true });
   }
 
   /* ---------- admin ---------- */
@@ -441,6 +471,16 @@ async function admin(req, env, ctx, path, m, url) {
     const rules = ((await body(req)).rules || []).map((r) => ({ kw: str(r.kw, 60).toLowerCase(), cat: str(r.cat, 40) })).filter((r) => r.kw && r.cat).slice(0, 200);
     await setSetting(env, "cat_rules", JSON.stringify(rules));
     return json(rules);
+  }
+  if (path === "/api/admin/reviews" && m === "GET") {
+    return json((await env.DB.prepare("SELECT r.*, p.title FROM reviews r LEFT JOIN products p ON p.id=r.product_id ORDER BY r.created_at DESC LIMIT 500").all()).results);
+  }
+  if ((p = path.match(/^\/api\/admin\/reviews\/(\d+)$/))) {
+    const r = await env.DB.prepare("SELECT product_id FROM reviews WHERE id=?").bind(p[1]).first(); if (!r) return bad("Not found", 404);
+    if (m === "DELETE") await env.DB.prepare("DELETE FROM reviews WHERE id=?").bind(p[1]).run();
+    else { const b = await body(req); await env.DB.prepare("UPDATE reviews SET status=? WHERE id=?").bind(b.status === "hidden" ? "hidden" : "published", p[1]).run(); }
+    await refreshRating(env, r.product_id); await bustCache(env);
+    return json({ ok: true });
   }
   if (path === "/api/admin/cart-offer" && m === "GET") return json({ on: true, percent: 10, code: "CART10", ...(parse(await getSetting(env, "cart_offer"), {}) || {}) });
   if (path === "/api/admin/cart-offer" && m === "PUT") {
