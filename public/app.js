@@ -468,7 +468,7 @@ function rcard(p) {
       ${p.promo ? `<span class="rc-flag">⚡ ${p.promo.percent}% off</span>` : p.video ? `<span class="rc-flag vid">▶ Video</span>` : ""}${p.stock === 0 ? `<span class="rc-flag out">Sold out</span>` : ""}
       ${p.stock > 0 ? `<button class="rc-add" data-add="${p.id}" aria-label="Add to cart" title="Add to cart">+</button>` : ""}</div>
     <div class="rc-body">${(() => { const cc = COLLECTIONS.find((x) => x.id === p.collection); return cc ? `<a class="rc-cat" href="/collections/${cc.id}" data-link>${esc(cc.name)}</a>` : ""; })()}<a class="rc-t" href="/products/${p.id}" data-link>${esc(p.title)}</a>
-      <div class="rc-meta">${r ? `<span class="rc-stars"><b>${r.toFixed(1)}</b> <i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${p.reviews ? ` <span>(${p.reviews >= 1000 ? (p.reviews / 1000).toFixed(1) + "K" : p.reviews})</span>` : ""}</span>` : ""}${sw > 1 ? `<span class="rc-sw">+${sw} options</span>` : ""}</div>
+      <div class="rc-meta">${r && p.reviews > 0 ? `<span class="rc-stars"><b>${r.toFixed(1)}</b> <i>${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</i>${p.reviews ? ` <span>(${p.reviews >= 1000 ? (p.reviews / 1000).toFixed(1) + "K" : p.reviews})</span>` : ""}</span>` : ""}${sw > 1 ? `<span class="rc-sw">+${sw} options</span>` : ""}</div>
       ${p.sold >= 50 ? `<div class="rc-sold">${p.sold >= 1000 ? (p.sold / 1000).toFixed(1) + "K+" : p.sold + "+"} bought</div>` : ""}
       <div class="rc-price">${off ? `<span class="rc-off">-${off}%</span>` : ""}<span class="rc-now"><sup>$</sup>${Math.floor(p.price)}<sup>${String(Math.round((p.price % 1) * 100)).padStart(2, "0")}</sup></span>${off ? `<s>${money(p.compareAt)}</s>` : ""}</div>
       ${p.promo ? `<div class="promo-line">Ends in <span data-ends="${p.promo.endsAt}">${timeLeft(p.promo.endsAt)}</span></div>` : ""}
@@ -525,7 +525,7 @@ function collection(id, params) {
     ${(q || id === "all") && catC.size > 1 ? `<div class="fl-g"><h4>Department</h4>${[...catC.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => chk("cat", k, COLLECTIONS.find((x) => x.id === k)?.name || "Other", n)).join("")}</div>`
       : !q && c ? `<div class="fl-g"><h4>Department</h4><a class="fl-link" href="/collections/all" data-link>‹ Any department</a><b class="fl-cur">${esc(c.name)}</b>${COLLECTIONS.filter((x) => x.id !== id).slice(0, 12).map((x) => `<a class="fl-link sub" href="/collections/${x.id}" data-link>${esc(x.name)}</a>`).join("")}</div>` : ""}
     ${gC.size ? `<div class="fl-g"><h4>Gender</h4>${GENDERS.map(([n]) => n).filter((n) => gC.has(n)).map((n) => chk("g", n, n, gC.get(n))).join("")}</div>` : ""}
-    <div class="fl-g"><h4>Customer Reviews</h4>${[4, 3].map((r) => `<button class="fl-rate ${st.rate === r ? "on" : ""}" data-rate="${r}"><i>${"★".repeat(r)}${"☆".repeat(5 - r)}</i> & Up</button>`).join("")}</div>
+    ${!base.some((p) => p.reviews > 0) ? "" : `<div class="fl-g"><h4>Customer Reviews</h4>${[4, 3].map((r) => `<button class="fl-rate ${st.rate === r ? "on" : ""}" data-rate="${r}"><i>${"★".repeat(r)}${"☆".repeat(5 - r)}</i> & Up</button>`).join("")}</div>`}
     ${sizes.length ? `<div class="fl-g"><h4>Size</h4><div class="fl-sizes">${sizes.map((x) => `<button class="fl-size ${st.sz.includes(x) ? "on" : ""}" data-sz="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>` : ""}
     ${cC.size ? `<div class="fl-g"><h4>Color</h4><div class="fl-colors">${COLORS.filter(([n]) => cC.has(n)).map(([n, hex]) => `<button class="fl-col ${st.col.includes(n) ? "on" : ""}" data-col="${n}" title="${n} (${cC.get(n)})" style="--c:${hex}"></button>`).join("")}</div></div>` : ""}
     <div class="fl-g"><h4>Price</h4>${PRICE_BANDS.map(([lo, hi, t]) => `<button class="fl-link ${st.band === lo + "-" + hi ? "on" : ""}" data-band="${lo}-${hi}">${t}</button>`).join("")}
@@ -536,7 +536,7 @@ function collection(id, params) {
   const activeN = () => st.cat.length + st.g.length + st.sz.length + st.col.length + (st.band ? 1 : 0) + (st.min || st.max ? 1 : 0) + (st.rate ? 1 : 0) + st.us + st.stock + st.free + (st.deal ? 1 : 0);
   app.innerHTML = `<div class="az-res-top"><div class="wrap az-res-bar"><span id="resCount"></span>
       <div class="flex" style="gap:8px"><button class="btn sm ghost fl-open" id="flOpen">⚙ Filters <span id="flN"></span></button>
-      <label class="az-sort">Sort by: <select id="sortSel">${SORTS.map(([v, t]) => `<option value="${v}" ${st.sort === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></div></div></div>
+      <label class="az-sort">Sort by: <select id="sortSel">${SORTS.filter(([v]) => v !== "review" || PRODUCTS.some((p) => p.reviews > 0)).map(([v, t]) => `<option value="${v}" ${st.sort === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></div></div></div>
     <div class="wrap az-res">
       <aside class="az-filters" id="filters"></aside>
       <section class="az-main">
