@@ -775,7 +775,7 @@ function loadPaypal() {
   if (!CONFIG.paypalClientId) return Promise.reject(new Error("no client id"));
   return (paypalLoad ||= new Promise((ok, fail) => {
     const s = document.createElement("script");
-    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(CONFIG.paypalClientId)}&currency=USD&intent=capture&components=buttons&enable-funding=card`;
+    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(CONFIG.paypalClientId)}&currency=USD&intent=capture&components=buttons&enable-funding=card,venmo,paylater`;
     s.onload = ok; s.onerror = () => { paypalLoad = null; fail(new Error("PayPal failed to load")); }; document.head.appendChild(s);
   }));
 }
