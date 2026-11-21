@@ -820,7 +820,7 @@ function checkout() {
       <section class="co-step"><div class="co-head"><span class="co-n">3</span><h2>Review items and delivery</h2></div><div class="co-body" id="coItems"></div></section>
       <div id="coError" class="note err" hidden></div>
     </form>
-    <aside class="co-summary"><div id="paypal-buttons" style="min-height:50px"></div>
+    <aside class="co-summary"><div id="paypal-buttons" style="min-height:50px"></div>${CONFIG.crypto ? `<button type="button" class="btn block crypto-btn" id="cryptoPay"><span>₿</span> Pay with crypto <small>BTC · ETH · USDT · 300+ coins</small></button>` : ""}
       <p class="co-fine">By placing your order, you agree to LeeysPremium's <a href="/pages/privacy" data-link>privacy notice</a> and <a href="/pages/terms" data-link>terms of service</a>.</p>
       <h3>Order Summary</h3><div class="totals" id="totals"></div>
       <p class="co-fine">🔁 30-day easy returns · 📦 Tracking on every order</p></aside></div></div>`;
@@ -881,6 +881,16 @@ function checkout() {
   };
   form.onsubmit = (e) => e.preventDefault();
   let localId = null;
+  if ($("#cryptoPay")) $("#cryptoPay").onclick = async () => {
+    if (!valid()) return; const btn = $("#cryptoPay"), f = form; btn.disabled = true; btn.firstChild.nextSibling.textContent = " Opening crypto payment…";
+    try {
+      const r = await api("/api/checkout/crypto", { items: items(), code: V.code, shipCode: V.shipCode, country: f.country.value, email: f.email.value, marketing: f.marketing.checked,
+        address: { firstName: f.firstName.value, lastName: f.lastName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, province: f.province.value, zip: f.zip.value, phone: f.phone.value } });
+      rememberOrder(r.orderId, f.email.value);
+      try { sessionStorage.setItem("lp_crypto", JSON.stringify({ id: r.orderId, cart: bag === cart })); } catch {}
+      location.href = r.url;
+    } catch (e) { err(e.message); btn.disabled = false; btn.firstChild.nextSibling.textContent = " Pay with crypto "; }
+  };
   loadPaypal().then(() => {
     window.paypal.Buttons({
       style: { layout: "vertical", shape: "pill", label: "pay", height: 48 },
@@ -903,6 +913,7 @@ function checkout() {
 
 function thankYou(params) {
   const n = esc(params.get("order") || "");
+  if (params.get("crypto")) return cryptoWait(params.get("order") || "");
   app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><p class="muted">Once your items arrive, you can rate them from the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> or on each product's page.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
 }
 
@@ -1136,6 +1147,28 @@ function reviewModal(p, preset = {}) {
       m.remove(); toast("Thank you! Your review is live."); p.reviews = p.reviews || 0; if ($("#revBox")) loadReviews(p); if (preset.done) preset.done();
     } catch (er) { err.textContent = er.message; err.hidden = false; if (/order/i.test(er.message)) m.querySelector(".rev-verify").classList.remove("hide"); }
   };
+}
+
+// After paying on the crypto page: wait for the blockchain confirmation, then show the normal thank-you
+function cryptoWait(id) {
+  const n = esc(id);
+  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">⏳</div><h1>Confirming your crypto payment…</h1>
+    <p>Order <b>#${n}</b>. Crypto payments are confirmed by the blockchain — usually within a few minutes (Bitcoin can take up to an hour). You can safely leave this page; we'll email your receipt, and the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> updates once it's confirmed.</p>
+    <p class="muted" id="cwStatus">Checking…</p><a class="btn ghost" href="/collections/all" data-link>Continue shopping</a></div>`;
+  const labels = { waiting: "Waiting for your payment to arrive…", confirming: "Payment seen — waiting for blockchain confirmations…", confirmed: "Confirmed — finishing up…", sending: "Confirmed — finishing up…", partially_paid: "We received less than the full amount. Please contact support@leeyspremium.com with your order number.", failed: "The payment failed. You haven't been charged — please try again.", expired: "This payment expired. Please place the order again." };
+  const tick = async () => {
+    if (location.pathname !== "/thank-you") return;
+    try {
+      const s = await api("/api/orders/status?id=" + encodeURIComponent(id));
+      if (s.status !== "pending") {
+        try { const p = JSON.parse(sessionStorage.getItem("lp_crypto") || "null"); if (p && p.id === id) { if (p.cart) { cart.items = []; cart.save(); } else sessionStorage.removeItem("lp_buynow"); sessionStorage.removeItem("lp_crypto"); } } catch {}
+        trk("buy"); return go("/thank-you?order=" + encodeURIComponent(id), true);
+      }
+      if ($("#cwStatus")) $("#cwStatus").textContent = labels[s.crypto] || labels.waiting;
+    } catch {}
+    setTimeout(tick, 8000);
+  };
+  tick();
 }
 
 const STATUS_TEXT = { paid: "Payment received", processing: "Preparing your order", action_needed: "Preparing your order", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled", refunded: "Refunded" };

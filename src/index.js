@@ -6,6 +6,7 @@ import { mediaReady, startUpload, uploadPart, completeUpload, deleteObject, serv
 import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
+import { cryptoReady, createCryptoInvoice, verifyIpn } from "./crypto-pay.js";
 import { publicDraw, currentDraw, runDueDraws, runDraw, vapidKeys, pushNotice, notifyDraw, turnstileOk, ipHash, ticketCode, eligibleCountry, newSeed, sha256 } from "./draws.js";
 import { cjSearch, cjCategories, cjProduct, cjPageVideo, cjToRecord, cjStock, cjCreateOrder, cjOrderDetail } from "./cj.js";
 
@@ -181,6 +182,13 @@ async function ensureCartOfferVoucher(env, o) {
     ON CONFLICT(code) DO UPDATE SET percent=excluded.percent, active=excluded.active, label=excluded.label`).bind(o.code, o.percent, o.on ? 1 : 0, `${o.percent}% off your order`).run();
 }
 const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "checkout", "buy", "ptime", "vtime", "country", "city"]);
+// Everything that happens once an order is paid (PayPal or crypto)
+async function afterPaid(env, ctx, o) {
+  for (const c of [o.discount_code, o.ship_code].filter(Boolean)) await env.DB.prepare("UPDATE discounts SET uses=uses+1 WHERE code=?").bind(c).run();
+  const items = parse(o.items, []);
+  await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.gift ? 0 : l.qty, l.id)));
+  ctx.waitUntil(fulfil(env, o.id).catch(() => {}));
+}
 const REVIEWABLE = new Set(["paid", "processing", "action_needed", "shipped", "delivered"]);
 async function refreshRating(env, pid) {
   await env.DB.prepare(`UPDATE products SET rating=COALESCE((SELECT AVG(rating) FROM reviews WHERE product_id=?1 AND status='published'),0),
@@ -194,7 +202,7 @@ async function handleRoutes(req, env, ctx) {
   // Public config
   await ensureSchema(env);
 
-  if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES, country: req.cf?.country || "US",
+  if (path === "/api/config") return json({ crypto: cryptoReady(env), paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES, country: req.cf?.country || "US",
     heroSlides: parse(await getSetting(env, "hero_slides"), []), homeTiles: parse(await getSetting(env, "home_tiles"), {}) || {}, cartOffer: await cartOffer(env), live: (({ status, title }) => ({ status: status || "off", title: title || "" }))(parse(await getSetting(env, "live"), {}) || {}) });
 
   /* ---------- prize draw (public) ---------- */
@@ -436,11 +444,45 @@ async function handleRoutes(req, env, ctx) {
     try { cap = await capturePaypalOrder(env, o.paypal_order_id); } catch (e) { return bad(e.message, 402); }
     if (cap.status !== "COMPLETED" || Math.abs(cap.amount - o.total) > 0.01 || cap.currency !== "USD") return bad("Payment was not completed", 402);
     await env.DB.prepare("UPDATE orders SET status='paid', paypal_capture_id=?, paid_at=datetime('now') WHERE id=? AND status='pending'").bind(cap.captureId, o.id).run();
-    for (const c of [o.discount_code, o.ship_code].filter(Boolean)) await env.DB.prepare("UPDATE discounts SET uses=uses+1 WHERE code=?").bind(c).run();
-    const items = parse(o.items, []);
-    await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.gift ? 0 : l.qty, l.id)));
-    ctx.waitUntil(fulfil(env, o.id).catch(() => {}));
+    await afterPaid(env, ctx, o);
     return json({ ok: true, orderId: o.id, status: "paid" });
+  }
+
+  // Crypto checkout: same order as PayPal, paid on NOWPayments' hosted page
+  if (path === "/api/checkout/crypto" && m === "POST") {
+    if (!cryptoReady(env)) return bad("Crypto payments aren't set up yet.", 503);
+    const b = await body(req);
+    const email = str(b.email, 200).toLowerCase(), a = b.address || {};
+    const address = { address1: str(a.address1), address2: str(a.address2), city: str(a.city, 80), province: str(a.province, 80), zip: str(a.zip, 20) };
+    const name = (str(a.firstName, 60) + " " + str(a.lastName, 60)).trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad("Please enter a valid email");
+    if (!name || !address.address1 || !address.city || !address.zip) return bad("Please complete your shipping address");
+    let o; try { o = await buildOrder(env, b); } catch (e) { return bad(e.message); }
+    address.countryName = COUNTRY_NAMES[o.country] || o.country;
+    const id = newOrderId();
+    let inv; try { inv = await createCryptoInvoice(env, { orderId: id, amount: o.total, description: "LeeysPremium order " + id, base: siteUrl(env, req) }); } catch (e) { return bad(e.message, 502); }
+    await env.DB.prepare(`INSERT INTO orders (id,email,name,phone,address,country,items,subtotal,discount,discount_code,shipping,total,cost_total,status,marketing,ship_code,ship_discount,pay_method,crypto_invoice)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,'crypto',?)`).bind(id, email, name, str(a.phone, 30), JSON.stringify(address), o.country, JSON.stringify(o.lines),
+      o.subtotal, o.discount, o.code, o.shipping, o.total, o.cost_total, b.marketing ? 1 : 0, o.shipCode, o.shipDiscount || 0, inv.id).run();
+    return json({ orderId: id, url: inv.url });
+  }
+  // NOWPayments tells us when a crypto payment changes status (signed with your IPN secret)
+  if (path === "/api/crypto/ipn" && m === "POST") {
+    const d = await verifyIpn(env, await req.text(), req.headers.get("x-nowpayments-sig"));
+    if (!d) return bad("Bad signature", 401);
+    const o = await env.DB.prepare("SELECT * FROM orders WHERE id=? AND pay_method='crypto'").bind(str(String(d.order_id || ""), 30)).first();
+    if (!o) return json({ ok: true });
+    await env.DB.prepare("UPDATE orders SET crypto_status=? WHERE id=?").bind(str(d.payment_status, 30), o.id).run();
+    const paidUsd = Number(d.price_amount), cur = String(d.price_currency || "").toLowerCase();
+    if (d.payment_status === "finished" && o.status === "pending" && cur === "usd" && Math.abs(paidUsd - o.total) <= 0.01) {
+      const r = await env.DB.prepare("UPDATE orders SET status='paid', paypal_capture_id=?, paid_at=datetime('now') WHERE id=? AND status='pending'").bind("crypto:" + str(String(d.payment_id || ""), 40), o.id).run();
+      if (r.meta?.changes) await afterPaid(env, ctx, o);
+    }
+    return json({ ok: true });
+  }
+  if (path === "/api/orders/status" && m === "GET") { // lets the thank-you page wait for a crypto confirmation
+    const o = await env.DB.prepare("SELECT status, crypto_status FROM orders WHERE id=?").bind(str(url.searchParams.get("id"), 30)).first();
+    return o ? json({ status: o.status, crypto: o.crypto_status || null }) : bad("Not found", 404);
   }
 
   if (path === "/api/orders/lookup") {
