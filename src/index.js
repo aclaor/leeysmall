@@ -6,6 +6,7 @@ import { mediaReady, startUpload, uploadPart, completeUpload, deleteObject, serv
 import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
+import { publicDraw, currentDraw, runDueDraws, runDraw, vapidKeys, pushNotice, notifyDraw, turnstileOk, ipHash, ticketCode, eligibleCountry, newSeed, sha256 } from "./draws.js";
 import { cjSearch, cjCategories, cjProduct, cjPageVideo, cjToRecord, cjStock, cjCreateOrder, cjOrderDetail } from "./cj.js";
 
 /* ---------------- helpers ---------------- */
@@ -195,6 +196,104 @@ async function handleRoutes(req, env, ctx) {
 
   if (path === "/api/config") return json({ paypalClientId: env.PAYPAL_CLIENT_ID || "", paypalEnv: env.PAYPAL_ENV || "sandbox", freeShip: FREE_SHIP, countries: COUNTRY_NAMES, country: req.cf?.country || "US",
     heroSlides: parse(await getSetting(env, "hero_slides"), []), homeTiles: parse(await getSetting(env, "home_tiles"), {}) || {}, cartOffer: await cartOffer(env), live: (({ status, title }) => ({ status: status || "off", title: title || "" }))(parse(await getSetting(env, "live"), {}) || {}) });
+
+  /* ---------- prize draw (public) ---------- */
+  if (path === "/api/draw" && m === "GET") {
+    await runDueDraws(env, ctx);
+    const d = await currentDraw(env);
+    if (!d) return json({ draw: null });
+    return json({ draw: await publicDraw(env, d, req.cf?.country), turnstileSite: (await getSetting(env, "turnstile_site")) || "", vapid: d.notify ? (await vapidKeys(env)).pub : "" });
+  }
+  if ((p = path.match(/^\/api\/draw\/(\d+)\/tickets\.txt$/))) { // published ticket list (for checking the draw)
+    const d = await env.DB.prepare("SELECT status FROM draws WHERE id=?").bind(p[1]).first();
+    if (!d || d.status !== "drawn") return new Response("The ticket list is published right after the draw.", { status: 404 });
+    const rows = (await env.DB.prepare("SELECT code FROM tickets WHERE draw_id=? AND status='active' ORDER BY created_at, code").bind(p[1]).all()).results;
+    return new Response(rows.map((r) => r.code).join("\n"), { headers: { "content-type": "text/plain; charset=utf-8" } });
+  }
+  if ((p = path.match(/^\/api\/draw\/(\d+)\/free$/)) && m === "POST") {
+    const b = await body(req), dev = str(b.device, 64), ip = req.headers.get("cf-connecting-ip") || "", cc = req.cf?.country || "";
+    const d = await env.DB.prepare("SELECT * FROM draws WHERE id=?").bind(p[1]).first();
+    if (!d || d.status !== "live" || d.draw_at <= new Date().toISOString()) return bad("This draw isn't open for entries.");
+    if (!eligibleCountry(d, cc)) return bad("Sorry, this draw isn't open in your country.", 403);
+    if (!/^[\w-]{16,64}$/.test(dev)) return bad("Please refresh the page and try again.");
+    if (!(await turnstileOk(env, b.turnstile, ip))) return bad("Please complete the quick human check and try again.", 403);
+    const day = new Date().toISOString().slice(0, 10), ih = await ipHash(env, ip);
+    const used = await env.DB.prepare("SELECT SUM(device=?) dv, SUM(ip_hash=?) ip FROM tickets WHERE draw_id=? AND kind='free' AND day=?").bind(dev, ih, d.id, day).first();
+    if ((used.dv || 0) >= (d.free_per_day || 1)) return bad("You've used today's free entry. Come back tomorrow for another one!", 429);
+    if ((used.ip || 0) >= Math.max(5, (d.free_per_day || 1) * 5)) return bad("Too many free entries from this connection today. Please try again tomorrow.", 429);
+    const code = ticketCode();
+    await env.DB.prepare("INSERT INTO tickets (code, draw_id, kind, device, ip_hash, country, day) VALUES (?,?,'free',?,?,?,?)").bind(code, d.id, dev, ih, cc, day).run();
+    return json({ ticket: { code, kind: "free", drawId: d.id } });
+  }
+  if ((p = path.match(/^\/api\/draw\/(\d+)\/pay$/)) && m === "POST") { // buy $1 voucher(s), each with one entry
+    const b = await body(req), dev = str(b.device, 64), cc = req.cf?.country || "", qty = Math.min(5, Math.max(1, Math.round(Number(b.qty) || 1)));
+    const d = await env.DB.prepare("SELECT * FROM draws WHERE id=?").bind(p[1]).first();
+    if (!d || d.status !== "live" || d.draw_at <= new Date().toISOString()) return bad("This draw isn't open for entries.");
+    if (!eligibleCountry(d, cc)) return bad("Sorry, this draw isn't open in your country.", 403);
+    if (!/^[\w-]{16,64}$/.test(dev)) return bad("Please refresh the page and try again.");
+    const day = new Date().toISOString().slice(0, 10);
+    const used = await env.DB.prepare("SELECT COUNT(*) n FROM tickets WHERE draw_id=? AND kind='paid' AND device=? AND day=? AND status='active'").bind(d.id, dev, day).first();
+    if (used.n + qty > (d.paid_per_day || 10)) return bad(`The limit is ${d.paid_per_day || 10} voucher entries per day.`, 429);
+    const ref = "DRW" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const label = d.voucher_type === "shipping" ? `$${d.entry_price.toFixed(2)} shipping voucher + prize draw entry` : `$${d.entry_price.toFixed(2)} store voucher + prize draw entry`;
+    let ppId;
+    try { ppId = await createPaypalOrder(env, { id: ref, items: [{ title: label, price: d.entry_price, qty }], total: Math.round(d.entry_price * qty * 100) / 100, shipping: 0, discount: 0 }); }
+    catch (e) { return bad(e.message, 502); }
+    const ih = await ipHash(env, req.headers.get("cf-connecting-ip") || "");
+    await env.DB.batch(Array.from({ length: qty }, () => env.DB.prepare("INSERT INTO tickets (code, draw_id, kind, device, ip_hash, country, day, status, paypal_order_id) VALUES (?,?,'paid',?,?,?,?,'pending',?)")
+      .bind(ticketCode(), d.id, dev, ih, cc, day, ppId)));
+    return json({ paypalOrderId: ppId });
+  }
+  if (path === "/api/draw/pay/capture" && m === "POST") {
+    const b = await body(req), ppId = str(b.paypalOrderId, 60);
+    const pend = (await env.DB.prepare("SELECT t.*, d.entry_price, d.voucher_type, d.title FROM tickets t JOIN draws d ON d.id=t.draw_id WHERE t.paypal_order_id=?").bind(ppId).all()).results;
+    if (!pend.length) return bad("Purchase not found", 404);
+    if (pend[0].status !== "active") {
+      let cap; try { cap = await capturePaypalOrder(env, ppId); } catch (e) { return bad(e.message, 402); }
+      if (cap.status !== "COMPLETED" || Math.abs(cap.amount - pend[0].entry_price * pend.length) > 0.01 || cap.currency !== "USD") return bad("Payment was not completed", 402);
+      const ends = new Date(Date.now() + 180 * 864e5).toISOString().slice(0, 19).replace("T", " ");
+      const st = [];
+      for (const t of pend) {
+        const vc = (pend[0].voucher_type === "shipping" ? "SHIP" : "SAVE") + "-" + t.code.slice(3).replace("-", "");
+        st.push(env.DB.prepare(`INSERT OR IGNORE INTO discounts (code, percent, type, amount, ends_at, label, max_uses, show, active, scope) VALUES (?,0,?,?,?,?,1,0,1,'all')`)
+          .bind(vc, pend[0].voucher_type === "shipping" ? "shipping" : "amount", t.entry_price, ends, pend[0].voucher_type === "shipping" ? `$${t.entry_price.toFixed(2)} off shipping` : `$${t.entry_price.toFixed(2)} off your order`));
+        st.push(env.DB.prepare("UPDATE tickets SET status='active', voucher_code=? WHERE code=?").bind(vc, t.code));
+        t.voucher_code = vc;
+      }
+      await env.DB.batch(st);
+    }
+    const rows = (await env.DB.prepare("SELECT code, kind, voucher_code FROM tickets WHERE paypal_order_id=?").bind(ppId).all()).results;
+    return json({ tickets: rows.map((r) => ({ code: r.code, kind: r.kind, voucher: r.voucher_code, drawId: pend[0].draw_id })) });
+  }
+  if (path === "/api/draw/mine" && m === "POST") { // tickets on this device (+ any ticket codes the shopper typed in)
+    await runDueDraws(env, ctx);
+    const b = await body(req), dev = str(b.device, 64), codes = (Array.isArray(b.codes) ? b.codes : []).slice(0, 30).map((c) => str(c, 20).toUpperCase());
+    const rows = (await env.DB.prepare(`SELECT t.code, t.kind, t.draw_id, t.result, t.prize_id, t.voucher_code, t.consolation_code, t.claim IS NOT NULL claimed, t.created_at, d.title, d.claim_days, d.drawn_at
+      FROM tickets t JOIN draws d ON d.id=t.draw_id WHERE t.status='active' AND (t.device=? ${codes.length ? `OR t.code IN (${codes.map(() => "?").join(",")})` : ""}) ORDER BY t.created_at DESC LIMIT 200`)
+      .bind(dev || "-", ...codes).all()).results;
+    return json({ tickets: rows.map((r) => ({ code: r.code, kind: r.kind, drawId: r.draw_id, result: r.result, prizeId: r.prize_id, voucher: r.voucher_code, consolation: r.consolation_code, claimed: !!r.claimed, drawTitle: r.title,
+      claimBy: r.drawn_at ? new Date(new Date(r.drawn_at.replace(" ", "T") + "Z").getTime() + r.claim_days * 864e5).toISOString() : null })) });
+  }
+  if (path === "/api/draw/claim" && m === "POST") {
+    const b = await body(req), code = str(b.code, 20).toUpperCase();
+    const t = await env.DB.prepare("SELECT t.*, d.drawn_at, d.claim_days FROM tickets t JOIN draws d ON d.id=t.draw_id WHERE t.code=? AND t.status='active'").bind(code).first();
+    if (!t || t.result !== "won") return bad("That ticket isn't a winning ticket.", 404);
+    if (t.claim) return bad("This prize has already been claimed.");
+    if (Date.now() > new Date(t.drawn_at.replace(" ", "T") + "Z").getTime() + t.claim_days * 864e5) return bad("The claim period for this prize has ended.", 410);
+    const a = b.address || {}, need = ["name", "address1", "city", "zip", "country"].filter((k) => !str(a[k], 200).trim());
+    if (need.length || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(str(b.email, 200))) return bad("Please fill in your name, full shipping address and an email for the delivery updates.");
+    const claim = { name: str(a.name, 80), address1: str(a.address1, 200), address2: str(a.address2, 200), city: str(a.city, 80), province: str(a.province, 80), zip: str(a.zip, 20),
+      country: str(a.country, 2).toUpperCase(), phone: str(b.phone, 30), email: str(b.email, 200).toLowerCase(), at: new Date().toISOString() };
+    await env.DB.prepare("UPDATE tickets SET claim=? WHERE code=? AND claim IS NULL").bind(JSON.stringify(claim), code).run();
+    return json({ ok: true });
+  }
+  if (path === "/api/push/subscribe" && m === "POST") {
+    const b = await body(req), dev = str(b.device, 64), sub = b.sub || {};
+    if (!/^[\w-]{16,64}$/.test(dev) || !/^https:\/\//.test(sub.endpoint || "")) return bad("Invalid subscription");
+    await env.DB.prepare("INSERT INTO push_subs (device, endpoint, sub) VALUES (?,?,?) ON CONFLICT(device) DO UPDATE SET endpoint=excluded.endpoint, sub=excluded.sub").bind(dev, str(sub.endpoint, 600), JSON.stringify(sub).slice(0, 2000)).run();
+    return json({ ok: true });
+  }
+  if (path === "/api/push/notice" && m === "POST") return json((await pushNotice(env, str((await body(req)).endpoint, 600))) || {});
 
   if (path === "/api/collections") return json((await env.DB.prepare("SELECT id,name,blurb,cover FROM collections ORDER BY sort").all()).results);
   if (path === "/api/products") {
@@ -472,6 +571,63 @@ async function admin(req, env, ctx, path, m, url) {
     await setSetting(env, "cat_rules", JSON.stringify(rules));
     return json(rules);
   }
+  /* ---------- prize draws (admin) ---------- */
+  if (path === "/api/admin/draws" && m === "GET") {
+    await runDueDraws(env, ctx);
+    const list = (await env.DB.prepare(`SELECT d.*, (SELECT COUNT(*) FROM tickets t WHERE t.draw_id=d.id AND t.status='active') entries,
+      (SELECT COUNT(*) FROM tickets t WHERE t.draw_id=d.id AND t.status='active' AND t.kind='paid') paid FROM draws d ORDER BY d.id DESC LIMIT 50`).all()).results;
+    return json({ draws: list.map(({ seed, ...d }) => ({ ...d, seed: d.status === "drawn" ? seed : undefined, prizes: parse(d.prizes, []), winners: parse(d.winners, []) })),
+      turnstileSite: (await getSetting(env, "turnstile_site")) || "", turnstileSecret: !!env.TURNSTILE_SECRET });
+  }
+  if (path === "/api/admin/draws" && m === "POST") {
+    const b = await body(req), id = Number(b.id) || 0;
+    const prizes = [...new Set((b.prizes || []).map((x) => str(x, 120)).filter(Boolean))].slice(0, 3);
+    if (!prizes.length) return bad("Choose 1 to 3 prize products.");
+    const drawAt = new Date(b.drawAt); if (isNaN(drawAt)) return bad("Choose a valid draw date and time.");
+    const f = { title: str(b.title, 120) || "LeeysPremium Prize Draw", prizes: JSON.stringify(prizes), entry_price: Math.max(0.5, Math.min(50, Number(b.entryPrice) || 1)),
+      voucher_type: b.voucherType === "amount" ? "amount" : "shipping", draw_at: drawAt.toISOString(), goal: Math.max(0, Number(b.goal) || 0), show_progress: b.showProgress ? 1 : 0,
+      countries: (str(b.countries, 400).toUpperCase().replace(/[^A-Z,\s]/g, "").split(/[\s,]+/).filter(Boolean).join(",")) || "US",
+      consolation: Math.max(0, Number(b.consolation) || 0), consolation_min: Math.max(0, Number(b.consolationMin) || 0), consolation_days: Math.max(1, Math.min(365, Number(b.consolationDays) || 60)),
+      auto_vouchers: b.autoVouchers ? 1 : 0, notify: b.notify ? 1 : 0, free_per_day: Math.max(1, Math.min(5, Number(b.freePerDay) || 1)), paid_per_day: Math.max(1, Math.min(50, Number(b.paidPerDay) || 10)),
+      claim_days: Math.max(3, Math.min(60, Number(b.claimDays) || 14)), permit: str(b.permit, 200) };
+    if (id) {
+      const cur = await env.DB.prepare("SELECT status, draw_at FROM draws WHERE id=?").bind(id).first(); if (!cur) return bad("Not found", 404);
+      if (cur.status === "drawn" || cur.status === "drawing") return bad("This draw has already happened.");
+      if (cur.status === "live") { // once live, the published rules only change in the entrants' favour
+        if (f.draw_at < cur.draw_at) return bad("A live draw's date can only be moved later, not earlier (entrants were told the date).");
+        if (JSON.stringify(prizes) !== JSON.stringify(parse((await env.DB.prepare("SELECT prizes FROM draws WHERE id=?").bind(id).first()).prizes, [])) && !b.confirmPrizes) return bad("Changing the prizes of a live draw: tick 'I understand' to confirm.");
+      }
+      await env.DB.prepare(`UPDATE draws SET ${Object.keys(f).map((k) => k + "=?").join(",")} WHERE id=?`).bind(...Object.values(f), id).run();
+      return json({ ok: true, id });
+    }
+    const seed = newSeed();
+    const r = await env.DB.prepare(`INSERT INTO draws (${Object.keys(f).join(",")}, seed, seed_hash, status) VALUES (${Object.keys(f).map(() => "?").join(",")},?,?,'draft')`).bind(...Object.values(f), seed, await sha256(seed)).run();
+    return json({ ok: true, id: r.meta.last_row_id });
+  }
+  if ((p = path.match(/^\/api\/admin\/draws\/(\d+)\/(publish|cancel|draw|notify-test)$/)) && m === "POST") {
+    const d = await env.DB.prepare("SELECT * FROM draws WHERE id=?").bind(p[1]).first(); if (!d) return bad("Not found", 404);
+    if (p[2] === "publish") {
+      if (d.status !== "draft") return bad("Only a draft can be published.");
+      if (d.draw_at <= new Date().toISOString()) return bad("Set a draw date in the future first.");
+      if ((await env.DB.prepare("SELECT COUNT(*) n FROM draws WHERE status='live'").first()).n) return bad("Another draw is already live. Finish or cancel it first.");
+      await env.DB.prepare("UPDATE draws SET status='live' WHERE id=?").bind(d.id).run();
+    } else if (p[2] === "cancel") {
+      if (!["draft", "live"].includes(d.status)) return bad("This draw can't be cancelled now.");
+      await env.DB.prepare("UPDATE draws SET status='cancelled' WHERE id=?").bind(d.id).run();
+    } else if (p[2] === "draw") {
+      if (d.status !== "live") return bad("Only a live draw can be drawn.");
+      if (d.draw_at > new Date().toISOString()) return bad("The draw can only happen on or after its published date and time.");
+      await runDraw(env, d, ctx);
+    } else return json({ sent: await notifyDraw(env, d.id) });
+    await bustCache(env);
+    return json({ ok: true });
+  }
+  if ((p = path.match(/^\/api\/admin\/draws\/(\d+)\/tickets$/)) && m === "GET") {
+    const rows = (await env.DB.prepare("SELECT code, kind, country, day, result, prize_id, voucher_code, consolation_code, claim, created_at FROM tickets WHERE draw_id=? AND status='active' ORDER BY (result='won') DESC, created_at DESC LIMIT 500").bind(p[1]).all()).results;
+    const byCountry = (await env.DB.prepare("SELECT country, COUNT(*) n FROM tickets WHERE draw_id=? AND status='active' GROUP BY country ORDER BY n DESC").bind(p[1]).all()).results;
+    return json({ tickets: rows.map((r) => ({ ...r, claim: parse(r.claim, null) })), byCountry });
+  }
+  if (path === "/api/admin/turnstile" && m === "PUT") { await setSetting(env, "turnstile_site", str((await body(req)).site, 100)); return json({ ok: true }); }
   if (path === "/api/admin/reviews" && m === "GET") {
     return json((await env.DB.prepare("SELECT r.*, p.title FROM reviews r LEFT JOIN products p ON p.id=r.product_id ORDER BY r.created_at DESC LIMIT 500").all()).results);
   }
@@ -823,7 +979,8 @@ export default {
   },
   async scheduled(event, env, ctx) {
     await ensureSchema(env);
-    if (!env.CJ_API_KEY) return;
+    try { await runDueDraws(env, ctx); } catch (e) { console.error("draw", e); }
+    if (!env.CJ_API_KEY || new Date(event.scheduledTime).getUTCHours() % 6 !== 0) return; // CJ sync stays every 6 hours
     ctx.waitUntil((async () => { await syncTracking(env); await syncProducts(env, 25); })());
   },
 };

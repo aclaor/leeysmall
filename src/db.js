@@ -36,6 +36,19 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL, product_id TEXT NOT NULL, variant TEXT, rating INTEGER NOT NULL,
     body TEXT, name TEXT, status TEXT DEFAULT 'published', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), UNIQUE(order_id, product_id))`,
   `CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id, status)`,
+  // prize draws
+  `CREATE TABLE IF NOT EXISTS draws (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, prizes TEXT NOT NULL DEFAULT '[]', entry_price REAL DEFAULT 1,
+    voucher_type TEXT DEFAULT 'shipping', draw_at TEXT NOT NULL, goal REAL DEFAULT 0, show_progress INTEGER DEFAULT 1, countries TEXT DEFAULT 'US',
+    consolation REAL DEFAULT 1, consolation_min REAL DEFAULT 0, consolation_days INTEGER DEFAULT 60, auto_vouchers INTEGER DEFAULT 1, notify INTEGER DEFAULT 1,
+    free_per_day INTEGER DEFAULT 1, paid_per_day INTEGER DEFAULT 10, claim_days INTEGER DEFAULT 14, permit TEXT, status TEXT DEFAULT 'draft',
+    seed TEXT, seed_hash TEXT, winners TEXT, drawn_at TEXT, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS tickets (code TEXT PRIMARY KEY, draw_id INTEGER NOT NULL, kind TEXT NOT NULL, device TEXT, ip_hash TEXT, country TEXT, day TEXT,
+    status TEXT DEFAULT 'active', paypal_order_id TEXT, voucher_code TEXT, result TEXT, prize_id TEXT, consolation_code TEXT, claim TEXT,
+    created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_tickets_draw ON tickets(draw_id, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_tickets_device ON tickets(device, draw_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tickets_pp ON tickets(paypal_order_id)`,
+  `CREATE TABLE IF NOT EXISTS push_subs (device TEXT PRIMARY KEY, endpoint TEXT UNIQUE, sub TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS stats (day TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, n INTEGER DEFAULT 0, PRIMARY KEY (day, kind, target))`,
 ];
 

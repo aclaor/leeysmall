@@ -32,7 +32,7 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["reviews", "Reviews"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["reviews", "Reviews"], ["draws", "Prize Draw"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
@@ -45,9 +45,101 @@ window.addEventListener("hashchange", () => { const t = location.hash.slice(1); 
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, insights, orders, reviews, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, insights, orders, reviews, draws, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
+
+/* ---------- Prize draw (sweepstakes) ---------- */
+async function draws(editId) {
+  const [r, prods] = await Promise.all([api("/api/admin/draws"), api("/api/admin/products")]);
+  const list = r.draws, edit = editId === "new" ? null : list.find((d) => d.id === editId) || null, showForm = editId != null;
+  const name = (id) => prods.find((p) => p.id === id)?.title || id;
+  const local = (iso) => { const d = new Date(iso), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const STATUS = { draft: ["Draft", ""], live: ["Live", "background:rgba(73,215,154,.15);color:#49d79a"], drawing: ["Drawing…", ""], drawn: ["Drawn", "background:rgba(255,210,63,.15);color:#ffd23f"], cancelled: ["Cancelled", "opacity:.6"] };
+  const picked = edit ? [...edit.prizes] : [];
+  const prizeVal = () => picked.reduce((t, id) => t + (prods.find((p) => p.id === id)?.price || 0), 0);
+  const f = edit || { title: "LeeysPremium Prize Draw", entry_price: 1, voucher_type: "shipping", draw_at: new Date(Date.now() + 7 * 864e5).toISOString(), goal: 0, show_progress: 1, countries: "US", consolation: 1, consolation_min: 0,
+    consolation_days: 60, auto_vouchers: 1, notify: 1, free_per_day: 1, paid_per_day: 10, claim_days: 14, permit: "" };
+  main().innerHTML = `<div class="row-between" style="flex-wrap:wrap;gap:10px"><h1 style="margin:0">Prize Draw</h1>${showForm ? "" : `<button class="btn" id="dwNew">+ New prize draw</button>`}</div>
+    <p class="muted" style="margin:6px 0 16px">A sweepstakes with a spinning prize wheel on your homepage. Anyone can enter <b>free</b> (one tap, no email) or get an entry with each ${money(1)} voucher they buy. Winners are drawn at random on the date you publish, with a public, checkable method. Before running one, make sure it's allowed in the countries you choose (e.g. a DTI permit for the Philippines) — a quick check with a lawyer is wise.</p>
+    ${showForm ? `<div class="panel"><b>${edit ? "Edit prize draw" : "New prize draw"}</b>${edit?.status === "live" ? `<p class="note" style="margin-top:10px">This draw is live: the date can only move later, and entrants keep their tickets.</p>` : ""}
+      <form id="dwForm" class="form-grid" style="margin-top:12px">
+        <label style="grid-column:1/-1">Title<input class="inp" name="title" value="${esc(f.title)}" maxlength="120"></label>
+        <div style="grid-column:1/-1"><div class="row-between"><b style="font-size:14px">Prizes (1–3 products, one winner each)</b><button type="button" class="btn sm ghost" id="dwPick">Choose products…</button></div><div id="dwPrizes" style="margin-top:8px"></div></div>
+        <label>Draw date & time (your time)<input class="inp" type="datetime-local" name="drawAt" value="${local(f.draw_at)}" required></label>
+        <label>Voucher price per entry ($)<input class="inp" type="number" step="0.01" min="0.5" name="entryPrice" value="${f.entry_price}"></label>
+        <label>Voucher bought<select class="inp" name="voucherType"><option value="shipping" ${f.voucher_type === "shipping" ? "selected" : ""}>Shipping voucher</option><option value="amount" ${f.voucher_type === "amount" ? "selected" : ""}>Store voucher ($ off order)</option></select></label>
+        <label>Prize goal ($) <span class="muted" id="dwGoalHint"></span><input class="inp" type="number" step="0.01" min="0" name="goal" value="${f.goal || ""}" placeholder="Prize value + shipping"></label>
+        <label style="grid-column:1/-1">Countries that can enter (codes, comma separated, or ALL)<input class="inp" name="countries" value="${esc(f.countries)}" placeholder="US, PH"></label>
+        <label>Free entries per device per day<input class="inp" type="number" min="1" max="5" name="freePerDay" value="${f.free_per_day}"></label>
+        <label>Max voucher entries per device per day<input class="inp" type="number" min="1" max="50" name="paidPerDay" value="${f.paid_per_day}"></label>
+        <label>Days a winner has to claim<input class="inp" type="number" min="3" max="60" name="claimDays" value="${f.claim_days}"></label>
+        <label>Permit / registration no. (shown in rules)<input class="inp" name="permit" value="${esc(f.permit || "")}" placeholder="e.g. DTI-FTEB SPD Permit No. …"></label>
+        <label class="flex" style="gap:8px"><input type="checkbox" name="showProgress" ${f.show_progress ? "checked" : ""}> Show public progress to the prize goal</label>
+        <label class="flex" style="gap:8px"><input type="checkbox" name="notify" ${f.notify ? "checked" : ""}> Send browser notifications when drawn</label>
+        <label class="flex" style="gap:8px;grid-column:1/-1"><input type="checkbox" name="autoVouchers" ${f.auto_vouchers ? "checked" : ""}> Give non-winners a thank-you voucher automatically (one per device)</label>
+        <label>Thank-you voucher ($ off)<input class="inp" type="number" step="0.01" min="0" name="consolation" value="${f.consolation}"></label>
+        <label>…for orders over ($, 0 = any)<input class="inp" type="number" step="0.01" min="0" name="consolationMin" value="${f.consolation_min}"></label>
+        <label>…valid for (days)<input class="inp" type="number" min="1" max="365" name="consolationDays" value="${f.consolation_days}"></label>
+        ${edit?.status === "live" ? `<label class="flex" style="gap:8px;grid-column:1/-1"><input type="checkbox" name="confirmPrizes"> I understand I'm changing the prizes of a live draw</label>` : ""}
+        <div style="grid-column:1/-1" class="flex"><button class="btn">Save</button><button type="button" class="btn ghost" id="dwCancel">Back</button></div></form></div>`
+    : list.length ? list.map((d) => `<div class="panel"><div class="row-between" style="flex-wrap:wrap;gap:8px"><div><b style="font-size:17px">${esc(d.title)}</b> <span class="badge" style="${STATUS[d.status]?.[1] || ""}">${STATUS[d.status]?.[0] || d.status}</span>
+        <div class="muted" style="font-size:13px;margin-top:4px">Draw ${new Date(d.draw_at).toLocaleString()} · ${d.entries} entries (${d.paid} with voucher = ${money(d.paid * d.entry_price)})${d.goal ? ` · goal ${money(d.goal)} → ${Math.min(100, Math.round((d.paid * d.entry_price / d.goal) * 100))}%` : ""} · open to ${esc(d.countries)}</div></div>
+        <div class="flex" style="gap:6px;flex-wrap:wrap">${["draft", "live"].includes(d.status) ? `<button class="btn sm ghost" data-dw-edit="${d.id}">Edit</button>` : ""}${d.status === "draft" ? `<button class="btn sm" data-dw-act="publish" data-id="${d.id}">Publish (go live)</button>` : ""}
+          ${d.status === "live" ? `<button class="btn sm" data-dw-act="draw" data-id="${d.id}" ${new Date(d.draw_at) > Date.now() ? "disabled title='Available from the published draw time'" : ""}>Draw winners now</button>` : ""}
+          ${["draft", "live"].includes(d.status) ? `<button class="btn sm ghost" data-dw-act="cancel" data-id="${d.id}">Cancel</button>` : ""}<button class="btn sm ghost" data-dw-tix="${d.id}">Tickets & winners</button></div></div>
+        <div style="margin-top:10px;font-size:14px">${d.prizes.map((id, i) => `<div>🏆 ${esc(name(id))}${d.winners[i] ? ` → winner <code>${esc(d.winners[i].code)}</code>` : ""}</div>`).join("")}</div><div id="dwT${d.id}"></div></div>`).join("")
+    : `<div class="panel"><p class="muted">No prize draws yet. Create one, choose 1–3 prize products and a draw date, then publish it — the wheel appears on your homepage.</p></div>`}
+    <div class="panel"><b>🤖 Bot protection (Cloudflare Turnstile)</b><p class="muted" style="font-size:13px;margin:4px 0 10px">Stops scripts from grabbing thousands of free entries. Free from Cloudflare: Dashboard → Turnstile → Add widget (domain leeyspremium.com, mode "Managed"). Paste the <b>Site key</b> here, and add the <b>Secret key</b> as a Worker secret named <code>TURNSTILE_SECRET</code>.</p>
+      <div class="flex" style="gap:8px;flex-wrap:wrap"><input class="inp" id="tsSite" value="${esc(r.turnstileSite)}" placeholder="Site key (starts with 0x…)" style="flex:1;min-width:240px"><button class="btn sm" id="tsSave">Save</button></div>
+      <p style="font-size:13px;margin:8px 0 0">${r.turnstileSite && r.turnstileSecret ? "✅ Active — free entries require the human check." : r.turnstileSite ? "⚠️ Site key saved — add the TURNSTILE_SECRET secret to turn it on." : "Not set up yet — free entries are limited per device and per connection only."}</p></div>`;
+  $("#dwNew") && ($("#dwNew").onclick = () => draws("new"));
+  $("#tsSave").onclick = async () => { await api("/api/admin/turnstile", "PUT", { site: $("#tsSite").value.trim() }); toast("Saved"); draws(editId); };
+  main().querySelectorAll("[data-dw-edit]").forEach((b) => (b.onclick = () => draws(Number(b.dataset.dwEdit))));
+  main().querySelectorAll("[data-dw-act]").forEach((b) => (b.onclick = async () => {
+    const act = b.dataset.dwAct, msg = { publish: "Publish this draw? The wheel goes live on your homepage and the date can then only move later.", cancel: "Cancel this draw? Entrants keep any vouchers they bought.", draw: "Draw the winners now? This can't be undone." }[act];
+    if (!confirm(msg)) return;
+    try { await api(`/api/admin/draws/${b.dataset.id}/${act}`, "POST", {}); toast({ publish: "Draw is live 🎡", cancel: "Draw cancelled", draw: "Winners drawn 🎉" }[act]); draws(); } catch (e) { toast(e.message); }
+  }));
+  main().querySelectorAll("[data-dw-tix]").forEach((b) => (b.onclick = async () => {
+    const box = $("#dwT" + b.dataset.dwTix); if (box.innerHTML) { box.innerHTML = ""; return; }
+    const t = await api(`/api/admin/draws/${b.dataset.dwTix}/tickets`);
+    box.innerHTML = `<div style="margin-top:12px;font-size:13px" class="muted">By country: ${t.byCountry.map((c) => `${esc(c.country || "?")} ${c.n}`).join(" · ") || "—"}</div>
+      <div class="tbl-wrap" style="margin-top:8px"><table><tr><th>Ticket</th><th>Type</th><th>Country</th><th>Entered</th><th>Result</th><th>Voucher</th><th>Winner's shipping details</th></tr>${t.tickets.map((x) => `<tr>
+        <td><code>${esc(x.code)}</code></td><td>${x.kind === "paid" ? "Voucher" : "Free"}</td><td>${esc(x.country || "")}</td><td>${esc(x.created_at.slice(0, 16))}</td>
+        <td>${x.result === "won" ? `🏆 ${esc(name(x.prize_id))}` : x.result === "lost" ? "—" : ""}</td><td>${esc(x.voucher_code || x.consolation_code || "")}</td>
+        <td>${x.claim ? `${esc(x.claim.name)}, ${esc(x.claim.address1)}${x.claim.address2 ? ", " + esc(x.claim.address2) : ""}, ${esc(x.claim.city)} ${esc(x.claim.province || "")} ${esc(x.claim.zip)}, ${esc(x.claim.country)}<br>${esc(x.claim.email)} ${esc(x.claim.phone || "")}` : x.result === "won" ? "<span class='muted'>Not claimed yet</span>" : ""}</td></tr>`).join("")}</table></div>`;
+  }));
+  if (!showForm) return;
+  const drawPrizes = () => {
+    $("#dwPrizes").innerHTML = picked.length ? picked.map((id, i) => { const p = prods.find((x) => x.id === id); return `<div class="flex" style="gap:10px;margin:4px 0">${p ? thumb(p) : ""}<span style="flex:1">${i + 1}. ${esc(p?.title || id)}</span><b>${p ? money(p.price) : ""}</b><button type="button" class="btn sm ghost" data-unpick="${esc(id)}">Remove</button></div>`; }).join("") : `<span class="muted">No prizes chosen yet</span>`;
+    $("#dwGoalHint").textContent = picked.length ? `(prizes worth ${money(prizeVal())})` : "";
+    main().querySelectorAll("[data-unpick]").forEach((b) => (b.onclick = () => { picked.splice(picked.indexOf(b.dataset.unpick), 1); drawPrizes(); }));
+  };
+  drawPrizes();
+  $("#dwCancel").onclick = () => draws();
+  $("#dwPick").onclick = () => {
+    const m = document.createElement("div"); m.className = "modal-bg";
+    m.innerHTML = `<div class="modal" style="max-width:640px"><h3 style="margin-top:0">Choose 1–3 prize products</h3><input class="inp" id="pq" placeholder="Search products…" style="width:100%">
+      <div id="pl" style="max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px"></div><div class="flex" style="justify-content:flex-end;gap:10px;margin-top:14px"><button class="btn" id="pd">Done</button></div></div>`;
+    document.body.appendChild(m);
+    const draw = () => { const q = $("#pq", m).value.toLowerCase().trim();
+      $("#pl", m).innerHTML = prods.filter((p) => p.active && (!q || p.title.toLowerCase().includes(q))).slice(0, 60).map((p) => `<label class="flex" style="gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer"><input type="checkbox" data-pp="${p.id}" ${picked.includes(p.id) ? "checked" : ""}>${thumb(p)}<span style="flex:1;font-size:13px">${esc(p.title.slice(0, 70))}</span><span class="muted" style="font-size:12px">${money(p.price)}</span></label>`).join("");
+      $("#pl", m).querySelectorAll("[data-pp]").forEach((c) => (c.onchange = () => { if (c.checked) { if (picked.length >= 3) { c.checked = false; return toast("Up to 3 prizes"); } picked.push(c.dataset.pp); } else picked.splice(picked.indexOf(c.dataset.pp), 1); })); };
+    $("#pq", m).oninput = draw; $("#pd", m).onclick = () => { m.remove(); drawPrizes(); }; m.onclick = (e) => { if (e.target === m) { m.remove(); drawPrizes(); } };
+    draw();
+  };
+  $("#dwForm").onsubmit = async (e) => {
+    e.preventDefault(); const F = e.target;
+    if (!picked.length) return toast("Choose at least one prize product");
+    try {
+      await api("/api/admin/draws", "POST", { id: edit?.id, title: F.title.value, prizes: picked, drawAt: new Date(F.drawAt.value).toISOString(), entryPrice: F.entryPrice.value, voucherType: F.voucherType.value,
+        goal: F.goal.value || prizeVal(), showProgress: F.showProgress.checked, countries: F.countries.value, freePerDay: F.freePerDay.value, paidPerDay: F.paidPerDay.value, claimDays: F.claimDays.value,
+        permit: F.permit.value, notify: F.notify.checked, autoVouchers: F.autoVouchers.checked, consolation: F.consolation.value, consolationMin: F.consolationMin.value, consolationDays: F.consolationDays.value, confirmPrizes: F.confirmPrizes?.checked });
+      toast(edit ? "Saved" : "Draft created — publish it when ready"); draws();
+    } catch (er) { toast(er.message); }
+  };
+}
 
 /* ---------- Reviews (verified buyers only) ---------- */
 async function reviews() {

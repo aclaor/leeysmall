@@ -332,7 +332,7 @@ function home() {
   ${onSale.length ? `<section class="az-bleed"><div class="wrap"><div class="az-bleed-head"><h2><a class="hlink" href="/collections/all?deal=today" data-link>⚡ Flash sale ›</a></h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
     <div class="az-rel"><div class="az-rail" data-rail>${onSale.slice(0, 20).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
   ${shelf("Top picks for you", "/collections/all?sort=top", best)}
-  <section class="az-spot"><div class="wrap"><div class="az-panel az-spot-in">
+  <section class="az-spot" id="draw"><div class="wrap"><div class="az-panel az-spot-in" id="drawSlot">
     <div class="az-spot-copy"><span class="eyebrow">LeeysPremium spotlight${maxOff >= 10 ? ` · Up to ${maxOff}% off` : ""}</span><h2>Everything you need, in one place.</h2>
       <p>Home, tech, fashion, beauty, outdoors and more — fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
       <div class="hero-ctas"><a class="btn accent" href="/collections/all" data-link>Shop all products</a><a class="btn live-btn ${CONFIG.live?.status === "live" ? "on" : ""}" href="/live" data-link><i></i>Premium Live${CONFIG.live?.status === "live" ? " · now" : ""}</a><a class="btn ghost video-btn" href="/videos" data-link>▶ Video</a></div></div>
@@ -346,6 +346,7 @@ function home() {
   startShowcase();
   bindVouchers();
   tileVideos();
+  loadDraw();
 }
 // Tile videos load and play only while visible (keeps the page fast and data-light on phones).
 let tileObs = null;
@@ -839,7 +840,9 @@ function checkout() {
   const items = () => bag.items.map((l) => ({ id: l.id, variant: l.variant, qty: l.qty }));
   const quote = async () => {
     try {
-      if (!V.offerTried && offerCode()) { V.offerTried = true; try { const v = await api("/api/discount", { code: offerCode() }); if (!V.extra.some((x) => x.code === v.code)) V.extra.push(v); } catch {} }
+      if (!V.offerTried) { V.offerTried = true;
+        const mine = [offerCode(), ...wallet()].filter((c) => c && !PROMO.vouchers.some((v) => v.code === c)).slice(0, 12);
+        await Promise.all(mine.map(async (c) => { try { const v = await api("/api/discount", { code: c }); if (!V.extra.some((x) => x.code === v.code)) V.extra.push(v); } catch {} })); }
       const q = await api("/api/quote", { items: items(), code: V.code, shipCode: V.shipCode, country: form.country.value, email: form.email.value });
       q.extraVouchers = [...(q.extraVouchers || []), ...V.extra];
       V.last = q;
@@ -901,6 +904,190 @@ function checkout() {
 function thankYou(params) {
   const n = esc(params.get("order") || "");
   app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><p class="muted">Once your items arrive, you can rate them from the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> or on each product's page.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
+}
+
+/* ---------- Prize draw: wheel, free one-tap entry, $1 voucher entry, tickets, results ---------- */
+const DRAW = { d: null, timer: null, mine: [], site: "", vapid: "" };
+const deviceId = () => { try { let d = localStorage.getItem("lp_device"); if (!d) { d = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join(""); localStorage.setItem("lp_device", d); } return d; } catch { return ""; } };
+const myCodes = () => { try { return JSON.parse(localStorage.getItem("lp_tickets") || "[]"); } catch { return []; } };
+const saveCodes = (c) => { try { localStorage.setItem("lp_tickets", JSON.stringify([...new Set([...c, ...myCodes()])].slice(0, 60))); } catch {} };
+const fmtWhen = (iso) => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+function countdown(iso) {
+  let s = Math.max(0, Math.floor((new Date(iso) - Date.now()) / 1000)); const d = Math.floor(s / 86400); s %= 86400;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60, p = (n) => String(n).padStart(2, "0");
+  return `${d ? `<b>${d}</b>d ` : ""}<b>${p(h)}</b>h <b>${p(m)}</b>m <b>${p(x)}</b>s`;
+}
+function wheelSVG(prizes) {
+  const n = prizes.length ? Math.max(6, Math.ceil(8 / prizes.length) * prizes.length) : 8, R = 150, C = 160, cols = ["#2f8cff", "#8b3dff", "#ff3d6e", "#11a7a0", "#f08a24", "#5468ff"];
+  const pt = (a, r) => [C + r * Math.sin(a), C - r * Math.cos(a)];
+  let seg = "", img = "", defs = "";
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * 2 * Math.PI, a1 = ((i + 1) / n) * 2 * Math.PI, [x0, y0] = pt(a0, R), [x1, y1] = pt(a1, R), mid = (a0 + a1) / 2, [ix, iy] = pt(mid, R * 0.64);
+    seg += `<path d="M${C},${C} L${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 0,1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="${cols[i % cols.length]}" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>`;
+    const pz = prizes[i % (prizes.length || 1)];
+    if (pz && pz.image) { defs += `<clipPath id="wc${i}"><circle cx="${ix.toFixed(1)}" cy="${iy.toFixed(1)}" r="27"/></clipPath>`;
+      img += `<circle cx="${ix.toFixed(1)}" cy="${iy.toFixed(1)}" r="29" fill="#fff"/><image href="${esc(pz.image)}" x="${(ix - 27).toFixed(1)}" y="${(iy - 27).toFixed(1)}" width="54" height="54" clip-path="url(#wc${i})" preserveAspectRatio="xMidYMid slice"/>`; }
+    else img += `<text x="${ix.toFixed(1)}" y="${(iy + 8).toFixed(1)}" text-anchor="middle" font-size="26">🎁</text>`;
+  }
+  for (let i = 0; i < 24; i++) { const [x, y] = pt((i / 24) * 2 * Math.PI, R + 5); img += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${i % 2 ? "#ffd23f" : "#fff"}" class="wl"/>`; }
+  return `<div class="wheel-wrap"><div class="wheel-ptr"></div><svg viewBox="0 0 320 320" class="wheel" role="img" aria-label="Prize wheel"><defs>${defs}</defs><circle cx="${C}" cy="${C}" r="${R + 10}" fill="#0a1022" stroke="#ffd23f" stroke-width="3"/>
+    <g class="wheel-rot" style="transform-origin:160px 160px">${seg}${img}</g><circle cx="${C}" cy="${C}" r="30" fill="#070b18" stroke="#ffd23f" stroke-width="3"/><text x="${C}" y="${C + 7}" text-anchor="middle" font-size="20" font-weight="800" fill="#fff">LP</text></svg></div>`;
+}
+async function loadDraw() {
+  let r; try { r = await api("/api/draw"); } catch { return; }
+  if (!r.draw || !$("#drawSlot")) return;
+  Object.assign(DRAW, { d: r.draw, site: r.turnstileSite, vapid: r.vapid });
+  await refreshMine(); renderDraw();
+}
+async function refreshMine() { try { DRAW.mine = (await api("/api/draw/mine", { device: deviceId(), codes: myCodes() })).tickets || []; } catch { DRAW.mine = []; } }
+function renderDraw() {
+  const d = DRAW.d, slot = $("#drawSlot"); if (!slot || !d) return;
+  clearInterval(DRAW.timer);
+  const mine = DRAW.mine.filter((t) => t.drawId === d.id), drawn = d.status === "drawn", open = d.status === "live" && new Date(d.drawAt) > Date.now();
+  const vName = d.voucherType === "shipping" ? "shipping voucher" : "store voucher";
+  const prizes = d.prizes.map((p) => `<a class="dz-prize" href="/products/${p.id}" data-link>${p.image ? `<img src="${esc(p.image)}" alt="">` : "<span>🎁</span>"}<div><b>${esc(p.title.slice(0, 60))}</b><small>Worth ${money(p.value)}</small></div></a>`).join("");
+  const won = mine.filter((t) => t.result === "won"), cons = mine.find((t) => t.consolation);
+  let body;
+  if (drawn) {
+    body = `<div class="dz-result">${won.length ? `<div class="dz-win">🎉 <b>Congratulations — your ticket ${esc(won[0].code)} won!</b>${won.some((t) => !t.claimed) ? `<button class="btn accent" data-claim-t="${esc(won.find((t) => !t.claimed).code)}">Claim your prize</button><small>Claim by ${new Date(won[0].claimBy).toLocaleDateString()}</small>` : `<small>Prize claimed ✓ — we'll email you tracking.</small>`}</div>`
+        : mine.length ? `<div class="dz-lose"><b>Thanks for joining!</b> Your ticket${mine.length > 1 ? "s" : ""} didn't win this time.${cons ? ` Here's a thank-you voucher: <code>${esc(cons.consolation)}</code> — saved to your vouchers, applied at checkout.` : ""}</div>` : ""}
+      <h3>Winners</h3>${d.winners.map((w) => `<div class="dz-wrow"><span>🏆 ${esc(w.prize.slice(0, 50))}</span><code>${esc(w.code)}</code></div>`).join("") || `<p class="muted">No entries were received.</p>`}
+      <small class="muted">Drawn ${fmtWhen(d.drawnAt.replace(" ", "T") + "Z")} · <a href="/draw-rules" data-link>Check that the draw was fair</a></small></div>`;
+  } else {
+    body = `<div class="dz-cd">${open ? `Draw in <span id="dzCd">${countdown(d.drawAt)}</span>` : "Drawing winners…"}<small>${fmtWhen(d.drawAt)}</small></div>
+      ${d.progress != null ? `<div class="dz-prog"><div class="row-between"><span>Prize goal</span><b>${d.progress}%</b></div><i><b style="width:${d.progress}%"></b></i></div>` : ""}
+      <div class="muted dz-n">${d.entries.toLocaleString()} entr${d.entries === 1 ? "y" : "ies"} so far</div>
+      ${d.eligible ? `<div class="dz-btns"><button class="btn accent" id="dzFree" ${open ? "" : "disabled"}>🎟 Enter free</button><button class="btn ghost" id="dzPay" ${open ? "" : "disabled"}>Get ${money(d.entryPrice)} ${vName} + entry</button></div>`
+        : `<div class="note">Sorry — this draw isn't open in your country (${esc(d.country || "unknown")}).</div>`}
+      <p class="dz-fine"><b>No purchase necessary.</b> Free and voucher entries have equal odds of winning. ${d.freePerDay === 1 ? "One free entry" : d.freePerDay + " free entries"} per day per device. Open to: ${esc(d.countries === "ALL" ? "all countries where permitted" : d.countries.split(",").join(", "))}. <a href="/draw-rules" data-link>Official rules</a>${d.permit ? ` · ${esc(d.permit)}` : ""}</p>`;
+  }
+  const tickets = mine.length ? `<div class="dz-tix"><div class="row-between"><b>Your tickets (${mine.length})</b>${d.notify && DRAW.vapid && "PushManager" in window && !drawn && (window.Notification?.permission !== "granted") ? `<button class="btn sm ghost" id="dzBell">🔔 Notify me of the result</button>` : ""}</div>
+    ${mine.slice(0, 6).map((t) => `<div class="dz-tk"><code>${esc(t.code)}</code><span>${t.kind === "paid" ? `with ${vName}${t.voucher ? ` <code>${esc(t.voucher)}</code>` : ""}` : "free entry"}</span><button class="dz-copy" data-copy="${esc(t.code)}" title="Copy">⧉</button></div>`).join("")}
+    ${mine.length > 6 ? `<small class="muted">+${mine.length - 6} more</small>` : ""}<small class="muted">Tickets are saved in this browser. Keep a copy of your ticket number in case you switch devices.</small></div>` : "";
+  slot.innerHTML = `<div class="az-spot-copy dz"><span class="eyebrow">🎡 LeeysPremium prize draw</span><h2>${esc(d.title)}</h2><div class="dz-prizes">${prizes}</div>${body}${tickets}</div>
+    <div class="dz-wheel">${wheelSVG(d.prizes)}${drawn && !sessionStorage.getItem("lp_spun_" + d.id) ? `<button class="btn accent dz-spin" id="dzSpin">Spin to reveal the winners</button>` : ""}</div>`;
+  if (open && $("#dzCd")) DRAW.timer = setInterval(() => { const c = $("#dzCd"); if (!c) return clearInterval(DRAW.timer); if (new Date(d.drawAt) <= Date.now()) { clearInterval(DRAW.timer); setTimeout(loadDraw, 4000); } c.innerHTML = countdown(d.drawAt); }, 1000);
+  $("#dzFree") && ($("#dzFree").onclick = freeEntry);
+  $("#dzPay") && ($("#dzPay").onclick = payEntry);
+  $("#dzBell") && ($("#dzBell").onclick = enablePush);
+  slot.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = () => navigator.clipboard?.writeText(b.dataset.copy).then(() => toast("Ticket number copied")).catch(() => {})));
+  slot.querySelectorAll("[data-claim-t]").forEach((b) => (b.onclick = () => claimModal(b.dataset.claimT)));
+  if ($("#dzSpin")) { const res = slot.querySelector(".dz-result"); res.classList.add("dz-hidden");
+    $("#dzSpin").onclick = () => { const w = slot.querySelector(".wheel-rot"); w.classList.add("spinning"); $("#dzSpin").disabled = true;
+      setTimeout(() => { sessionStorage.setItem("lp_spun_" + d.id, "1"); res.classList.remove("dz-hidden"); $("#dzSpin")?.remove(); confetti(); }, 4200); }; }
+  const vs = mine.map((t) => t.consolation || t.voucher).filter(Boolean); if (vs.length) saveWallet([...wallet(), ...vs]);
+}
+function confetti() {
+  const box = document.createElement("div"); box.className = "confetti";
+  box.innerHTML = Array.from({ length: 60 }, (_, i) => `<i style="left:${Math.random() * 100}%;background:${["#ffd23f", "#2f8cff", "#ff3d6e", "#49d79a", "#8b3dff"][i % 5]};animation-delay:${Math.random() * 0.6}s;transform:rotate(${Math.random() * 360}deg)"></i>`).join("");
+  document.body.appendChild(box); setTimeout(() => box.remove(), 3500);
+}
+function loadTurnstile() {
+  if (window.turnstile) return Promise.resolve();
+  return new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; s.async = true; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+}
+async function freeEntry() {
+  const d = DRAW.d, m = document.createElement("div"); m.className = "offer-bg";
+  m.innerHTML = `<div class="offer dz-modal"><button class="offer-x" aria-label="Close">✕</button><div class="offer-burst">🎟</div><h3>Free entry</h3>
+    <p>One tap — no email, no purchase. Your ticket is saved in this browser.</p><div id="tsBox" style="display:flex;justify-content:center;min-height:${DRAW.site ? 70 : 0}px"></div>
+    <div id="feErr" class="note err" hidden></div><button class="btn accent block" id="feGo">Get my free ticket</button>
+    <p class="dz-fine">By entering you agree to the <a href="/draw-rules" data-link>official rules</a>.</p></div>`;
+  document.body.appendChild(m);
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x,[data-link]")) m.remove(); };
+  let token = "";
+  if (DRAW.site) { try { await loadTurnstile(); window.turnstile.render("#tsBox", { sitekey: DRAW.site, theme: "dark", callback: (t) => (token = t) }); } catch {} }
+  $("#feGo", m).onclick = async () => {
+    const err = $("#feErr", m); err.hidden = true;
+    if (DRAW.site && !token) { err.textContent = "Please complete the quick human check above."; err.hidden = false; return; }
+    $("#feGo", m).disabled = true;
+    try {
+      const r = await api(`/api/draw/${d.id}/free`, { device: deviceId(), turnstile: token });
+      saveCodes([r.ticket.code]);
+      m.querySelector(".dz-modal").innerHTML = `<div class="offer-burst">🎉</div><span class="offer-eb">You're in!</span><div class="dz-code">${esc(r.ticket.code)}</div>
+        <p>Your ticket number. Winners are drawn ${fmtWhen(d.drawAt)}.</p>${d.notify && DRAW.vapid && "PushManager" in window ? `<button class="btn accent block" id="feBell">🔔 Notify me of the result</button>` : ""}<button class="btn ghost block" id="feOk">Done</button>`;
+      $("#feOk", m).onclick = () => m.remove(); $("#feBell", m) && ($("#feBell", m).onclick = async () => { await enablePush(); m.remove(); });
+      d.entries++; await refreshMine(); renderDraw();
+    } catch (e) { err.textContent = e.message; err.hidden = false; $("#feGo", m).disabled = false; if (DRAW.site && window.turnstile) window.turnstile.reset("#tsBox"); token = ""; }
+  };
+}
+function payEntry() {
+  const d = DRAW.d, vName = d.voucherType === "shipping" ? "shipping voucher" : "store voucher", m = document.createElement("div"); m.className = "offer-bg";
+  m.innerHTML = `<div class="offer dz-modal"><button class="offer-x" aria-label="Close">✕</button><h3>${money(d.entryPrice)} ${vName} + entry</h3>
+    <p>Each ${money(d.entryPrice)} buys a ${vName} you can use on any future order (valid 180 days) and includes one entry in the draw.</p>
+    <div class="dz-qty"><button data-q="-1">−</button><span id="pq">1</span><button data-q="1">+</button></div><div class="muted" id="pTot" style="margin:-4px 0 10px">Total ${money(d.entryPrice)}</div>
+    <div id="dzPP"></div><div id="peErr" class="note err" hidden></div><p class="dz-fine">No purchase necessary to enter — <a href="#" id="peFree">enter free instead</a>. Free and paid entries have equal odds.</p></div>`;
+  document.body.appendChild(m);
+  let q = 1; const close = () => m.remove();
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x")) close(); };
+  $("#peFree", m).onclick = (e) => { e.preventDefault(); close(); freeEntry(); };
+  m.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => { q = Math.min(5, Math.max(1, q + Number(b.dataset.q))); $("#pq", m).textContent = q; $("#pTot", m).textContent = "Total " + money(d.entryPrice * q); }));
+  const err = (t) => { $("#peErr", m).textContent = t; $("#peErr", m).hidden = false; };
+  loadPaypal().then(() => window.paypal.Buttons({
+    style: { layout: "vertical", shape: "pill", height: 44 },
+    createOrder: async () => (await api(`/api/draw/${d.id}/pay`, { device: deviceId(), qty: q }).catch((e) => { err(e.message); throw e; })).paypalOrderId,
+    onApprove: async (data) => {
+      try {
+        const r = await api("/api/draw/pay/capture", { paypalOrderId: data.orderID });
+        saveCodes(r.tickets.map((t) => t.code)); saveWallet([...wallet(), ...r.tickets.map((t) => t.voucher).filter(Boolean)]);
+        m.querySelector(".dz-modal").innerHTML = `<div class="offer-burst">🎉</div><span class="offer-eb">You're in — ${r.tickets.length} entr${r.tickets.length > 1 ? "ies" : "y"}</span>
+          ${r.tickets.map((t) => `<div class="dz-code sm">${esc(t.code)}</div>`).join("")}<p>Your ${vName}${r.tickets.length > 1 ? "s are" : " is"} saved and applied automatically at checkout.</p>
+          ${d.notify && DRAW.vapid && "PushManager" in window ? `<button class="btn accent block" id="peBell">🔔 Notify me of the result</button>` : ""}<button class="btn ghost block" id="peOk">Done</button>`;
+        $("#peOk", m).onclick = close; $("#peBell", m) && ($("#peBell", m).onclick = async () => { await enablePush(); close(); });
+        d.entries += r.tickets.length; await refreshMine(); renderDraw();
+      } catch (e) { err(e.message + " You have not been charged."); }
+    },
+    onError: () => err("Payment couldn't be completed. Please try again."),
+  }).render("#dzPP")).catch(() => { $("#dzPP", m).innerHTML = `<div class="note">Payments are being set up — try the free entry for now.</div>`; });
+}
+async function enablePush() {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return toast("Notifications aren't supported in this browser. On iPhone, install the app first (Share → Add to Home Screen).");
+    if ((await Notification.requestPermission()) !== "granted") return toast("Notifications are blocked — you can still check back here anytime.");
+    const reg = await navigator.serviceWorker.ready, key = Uint8Array.from(atob(DRAW.vapid.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((DRAW.vapid.length + 3) % 4)), (c) => c.charCodeAt(0));
+    const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+    await api("/api/push/subscribe", { device: deviceId(), sub: sub.toJSON() });
+    toast("🔔 We'll notify you when the winners are drawn"); renderDraw();
+  } catch (e) { toast("Couldn't turn on notifications: " + e.message); }
+}
+function claimModal(code) {
+  const m = document.createElement("div"); m.className = "offer-bg";
+  m.innerHTML = `<form class="offer rev-form" novalidate><button type="button" class="offer-x" aria-label="Close">✕</button><h3>🏆 Claim your prize</h3><p class="muted" style="margin:0">Ticket <b>${esc(code)}</b> — tell us where to ship it (free shipping).</p>
+    <input class="inp" name="name" placeholder="Full name" autocomplete="name"><input class="inp" name="email" type="email" placeholder="Email (for shipping updates)" autocomplete="email"><input class="inp" name="phone" placeholder="Phone (optional)" autocomplete="tel">
+    <select class="inp" name="country">${COUNTRY_OPTS()}</select><input class="inp" name="address1" placeholder="Street address" autocomplete="address-line1"><input class="inp" name="address2" placeholder="Apartment, unit (optional)" autocomplete="address-line2">
+    <div class="two"><input class="inp" name="city" placeholder="City" autocomplete="address-level2"><input class="inp" name="province" placeholder="State / Province" autocomplete="address-level1"></div><input class="inp" name="zip" placeholder="ZIP / Postal code" autocomplete="postal-code">
+    <div id="clErr" class="note err" hidden></div><button class="btn accent block">Submit claim</button></form>`;
+  document.body.appendChild(m);
+  const f = m.querySelector("form"); f.country.value = CONFIG.country || "US";
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x")) m.remove(); };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api("/api/draw/claim", { code, email: f.email.value, phone: f.phone.value, address: { name: f.name.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, province: f.province.value, zip: f.zip.value, country: f.country.value } });
+      m.remove(); toast("🎉 Claim received! We'll email you when your prize ships."); await refreshMine(); renderDraw(); }
+    catch (er) { $("#clErr", m).textContent = er.message; $("#clErr", m).hidden = false; }
+  };
+}
+async function drawRules() {
+  document.title = "Prize draw — official rules — LeeysPremium";
+  app.innerHTML = `<div class="wrap prose"><h1>Prize draw — official rules</h1><p class="muted">Loading…</p></div>`;
+  let r; try { r = await api("/api/draw"); } catch { r = {}; }
+  const d = r.draw, box = $(".prose"); if (!box) return;
+  if (!d) { box.innerHTML = `<h1>Prize draw — official rules</h1><p>There's no prize draw running right now. Check back soon!</p>`; return; }
+  const vName = d.voucherType === "shipping" ? "shipping voucher" : "store voucher", where = d.countries === "ALL" ? "all countries and territories where this promotion is permitted by law" : d.countries.split(",").map((c) => CONFIG.countries[c] || c).join(", ");
+  box.innerHTML = `<h1>${esc(d.title)} — official rules</h1>
+    <p><b>NO PURCHASE NECESSARY TO ENTER OR WIN. A PURCHASE DOES NOT INCREASE YOUR ODDS OF WINNING PER ENTRY. VOID WHERE PROHIBITED.</b></p>
+    <h3>1. Sponsor</h3><p>LeeysPremium (leeyspremium.com), a Leeys Technology store.${d.permit ? ` ${esc(d.permit)}.` : ""}</p>
+    <h3>2. Who can enter</h3><p>Open to individuals who have reached the age of majority where they live and are residents of: ${esc(where)}. Entries from other places are not accepted.</p>
+    <h3>3. Entry period and draw date</h3><p>Entries are accepted until <b>${fmtWhen(d.drawAt)}</b>. Winners are drawn at that time, whatever the number of entries. The "prize goal" progress bar is for information only and does not change the draw date.</p>
+    <h3>4. How to enter</h3><ul><li><b>Free entry:</b> tap "Enter free" on the homepage. Limit ${d.freePerDay} free entr${d.freePerDay === 1 ? "y" : "ies"} per person/device per day.</li>
+      <li><b>With a voucher:</b> buy a ${money(d.entryPrice)} ${vName} (valid 180 days on future orders); each voucher includes one entry.</li>
+      <li>Free entries and voucher entries are treated exactly the same in the draw. Automated or bulk entries are void.</li></ul>
+    <h3>5. Prizes</h3><ul>${d.prizes.map((p) => `<li>${esc(p.title)} — approximate retail value ${money(p.value)}, shipped free to the winner.</li>`).join("")}</ul><p>One prize per winning ticket. Prizes can't be exchanged for cash. Odds depend on the number of entries received.</p>
+    <h3>6. How winners are chosen</h3><p>Winners are picked at random by computer, one per prize, from all valid tickets. To make the draw verifiable, the SHA-256 fingerprint of a secret random seed is published before the draw:<br><code style="word-break:break-all">${esc(d.seedHash)}</code><br>
+      After the draw, the seed and the full list of ticket numbers are published. For prize <i>i</i> (starting at 0), the winning position is SHA-256("seed:i:attempt") as a number, modulo the number of tickets; "attempt" starts at 0 and increases only if that ticket already won.</p>
+    ${d.seed ? `<p><b>Seed:</b> <code style="word-break:break-all">${esc(d.seed)}</code> · <a href="/api/draw/${d.id}/tickets.txt" target="_blank" rel="noopener">Ticket list (in draw order)</a></p>` : ""}
+    <h3>7. Winner notification and claiming</h3><p>Results appear on the homepage for everyone who entered on that device, and as a browser notification for those who turned notifications on. Winning ticket numbers are listed publicly. A winner must claim within ${d.claimDays} days of the draw by entering shipping details; unclaimed prizes are forfeited.</p>
+    ${d.consolation ? `<h3>8. Thank-you vouchers</h3><p>Each device with a non-winning ticket receives one ${money(d.consolation.amount)} voucher${d.consolation.min ? ` for orders over ${money(d.consolation.min)}` : ""}, valid ${d.consolation.days} days. Vouchers have no cash value and can't be combined with another voucher of the same type.</p>` : ""}
+    <h3>${d.consolation ? 9 : 8}. General</h3><p>The sponsor guarantees the prizes. The sponsor may cancel or modify the promotion if fraud or technical problems affect its fairness, and may disqualify anyone tampering with the entry process. This promotion is not sponsored by or associated with PayPal or any payment provider. Questions: support@leeyspremium.com.</p>`;
 }
 
 /* ---------- Verified-buyer reviews ---------- */
@@ -994,7 +1181,7 @@ function notFound() { app.innerHTML = `<div class="wrap prose" style="text-align
 /* ---------- Router ---------- */
 function route() {
   const { pathname, search } = location, params = new URLSearchParams(search);
-  closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); VFEED.obs?.disconnect();
+  closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); clearInterval(DRAW.timer); VFEED.obs?.disconnect();
   let m;
   if (pathname === "/") home();
   else if (pathname === "/search") collection("all", params);
@@ -1008,6 +1195,7 @@ function route() {
   else if (pathname === "/thank-you") thankYou(params);
   else if (pathname === "/track") track(params);
   else if (pathname === "/account") account();
+  else if (pathname === "/draw-rules") drawRules();
   else if ((m = pathname.match(/^\/pages\/([\w-]+)$/))) contentPage(m[1]);
   else notFound();
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === pathname));

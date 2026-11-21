@@ -21,6 +21,6 @@
     "SITE_URL": "https://leeyspremium.com"
   },
   // Every 6 hours: refresh CJ stock/costs and pick up tracking numbers
-  "triggers": { "crons": ["17 */6 * * *"] },
+  "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true }
 }

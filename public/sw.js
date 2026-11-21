@@ -2,7 +2,7 @@
 // Pages: network first (always fresh), falls back to the cached shell when offline.
 // Static files: served from cache, refreshed in the background.
 // API, checkout, admin and payments: never cached.
-const VERSION = "lp-v14";
+const VERSION = "lp-v15";
 const SHELL = ["/", "/styles.css", "/app.js", "/manifest.webmanifest", "/favicon.svg", "/icons/icon-192.png", "/offline.html"];
 
 self.addEventListener("install", (e) => {
@@ -34,4 +34,25 @@ self.addEventListener("fetch", (e) => {
       return hit || net;
     }));
   }
+});
+
+// Prize-draw notifications: the push carries no data; we ask the store what to show for this device.
+self.addEventListener("push", (e) => {
+  e.waitUntil((async () => {
+    let n = { title: "LeeysPremium", body: "There's news about your prize draw ticket.", url: "/#draw" };
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      const r = await fetch("/api/push/notice", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub && sub.endpoint }) });
+      const j = await r.json(); if (j && j.title) n = j;
+    } catch {}
+    await self.registration.showNotification(n.title, { body: n.body, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", data: { url: n.url }, tag: "lp-draw" });
+  })());
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) if ("focus" in c) { c.navigate(url).catch(() => {}); return c.focus(); }
+    return self.clients.openWindow(url);
+  }));
 });
