@@ -884,7 +884,7 @@ function checkout() {
   if ($("#cryptoPay")) $("#cryptoPay").onclick = async () => {
     if (!valid()) return; const btn = $("#cryptoPay"), f = form; btn.disabled = true; btn.firstChild.nextSibling.textContent = " Opening crypto payment…";
     try {
-      const r = await api("/api/checkout/crypto", { items: items(), code: V.code, shipCode: V.shipCode, country: f.country.value, email: f.email.value, marketing: f.marketing.checked,
+      const r = await api("/api/checkout/crypto", { device: deviceId(), items: items(), code: V.code, shipCode: V.shipCode, country: f.country.value, email: f.email.value, marketing: f.marketing.checked,
         address: { firstName: f.firstName.value, lastName: f.lastName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, province: f.province.value, zip: f.zip.value, phone: f.phone.value } });
       rememberOrder(r.orderId, f.email.value);
       try { sessionStorage.setItem("lp_crypto", JSON.stringify({ id: r.orderId, cart: bag === cart })); } catch {}
@@ -896,7 +896,7 @@ function checkout() {
       style: { layout: "vertical", shape: "pill", label: "pay", height: 48 },
       onClick: (_, actions) => (valid() ? actions.resolve() : actions.reject()),
       createOrder: async () => {
-        const f = form, r = await api("/api/checkout", {
+        const f = form, r = await api("/api/checkout", { device: deviceId(),
           items: items(), code: V.code, shipCode: V.shipCode, country: f.country.value, email: f.email.value, marketing: f.marketing.checked,
           address: { firstName: f.firstName.value, lastName: f.lastName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, province: f.province.value, zip: f.zip.value, phone: f.phone.value },
         }).catch((e) => { err(e.message); throw e; });
@@ -914,7 +914,9 @@ function checkout() {
 function thankYou(params) {
   const n = esc(params.get("order") || "");
   if (params.get("crypto")) return cryptoWait(params.get("order") || "");
-  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><p class="muted">Once your items arrive, you can rate them from the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> or on each product's page.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
+  setTimeout(async () => { try { const t = ((await api("/api/draw/mine", { device: deviceId() })).tickets || []).filter((x) => x.orderId === (params.get("order") || "")); const box = $("#tyEntries");
+    if (box && t.length) box.innerHTML = `<div class="dz-tix" style="text-align:left;margin:14px 0"><b>🎟 Your order earned ${t.length} prize-draw entr${t.length > 1 ? "ies" : "y"}!</b>${t.map((x) => `<div class="dz-tk"><code>${esc(x.code)}</code><span>${esc(x.drawTitle)}</span></div>`).join("")}<a href="/#draw" data-link style="text-decoration:underline">See the prize draw ›</a></div>`; } catch {} }, 1200);
+  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><div id="tyEntries"></div><p class="muted">Once your items arrive, you can rate them from the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> or on each product's page.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
 }
 
 /* ---------- Prize draw: wheel, free one-tap entry, $1 voucher entry, tickets, results ---------- */
@@ -968,16 +970,18 @@ function renderDraw() {
     body = `<div class="dz-cd">${open ? `Draw in <span id="dzCd">${countdown(d.drawAt)}</span>` : "Drawing winners…"}<small>${fmtWhen(d.drawAt)}</small></div>
       ${d.progress != null ? `<div class="dz-prog"><div class="row-between"><span>Prize goal</span><b>${d.progress}%</b></div><i><b style="width:${d.progress}%"></b></i></div>` : ""}
       <div class="muted dz-n">${d.entries.toLocaleString()} entr${d.entries === 1 ? "y" : "ies"} so far</div>
-      ${d.eligible ? `<div class="dz-btns"><button class="btn accent" id="dzFree" ${open ? "" : "disabled"}>🎟 Enter free</button><button class="btn ghost dz-pay" id="dzPay" ${open ? "" : "disabled"}>🎟 ${money(d.entryPrice)} voucher + entry<small>Voucher is yours to keep</small></button></div>`
+      ${d.eligible ? `<div class="dz-btns"><button class="btn accent" id="dzFree" ${open ? "" : "disabled"}>🎟 Enter free</button><button class="btn ghost dz-pay" id="dzPay" ${open ? "" : "disabled"}>${d.voucherValue > d.entryPrice + 0.001 ? `🎟 ${money(d.voucherValue)} voucher for ${money(d.entryPrice)}` : `🎟 ${money(d.entryPrice)} voucher + entry`}<small>+ 1 entry · voucher is yours to keep</small></button></div>`
         : `<div class="note">Sorry — this draw isn't open in your country (${esc(d.country || "unknown")}).</div>`}
+      ${d.orderEntryPer && d.eligible ? `<a class="dz-shop" href="/collections/all" data-link>🛍 <span><b>Every ${money(d.orderEntryPer)} you spend = 1 entry</b><small>Added automatically when your order is paid</small></span><i>Shop now ›</i></a>` : ""}
       <p class="dz-fine"><b>No purchase necessary.</b> Free and voucher entries have equal odds of winning. ${d.freePerDay === 1 ? "One free entry" : d.freePerDay + " free entries"} per day per device. Open to: ${esc(d.countries === "ALL" ? "all countries where permitted" : d.countries.split(",").join(", "))}. <a href="/draw-rules" data-link>Official rules</a>${d.permit ? ` · ${esc(d.permit)}` : ""}</p>`;
   }
   const tickets = mine.length ? `<div class="dz-tix"><div class="row-between"><b>Your tickets (${mine.length})</b>${d.notify && DRAW.vapid && "PushManager" in window && !drawn && (window.Notification?.permission !== "granted") ? `<button class="btn sm ghost" id="dzBell">🔔 Notify me of the result</button>` : ""}</div>
-    ${mine.slice(0, 6).map((t) => `<div class="dz-tk"><code>${esc(t.code)}</code><span>${t.kind === "paid" ? `with ${vName}${t.voucher ? ` <code>${esc(t.voucher)}</code>` : ""}` : "free entry"}</span><button class="dz-copy" data-copy="${esc(t.code)}" title="Copy">⧉</button></div>`).join("")}
+    ${mine.slice(0, 6).map((t) => `<div class="dz-tk"><code>${esc(t.code)}</code><span>${t.kind === "paid" ? `with ${vName}${t.voucher ? ` <code>${esc(t.voucher)}</code>` : ""}` : t.kind === "order" ? "from your order" : "free entry"}</span><button class="dz-copy" data-copy="${esc(t.code)}" title="Copy">⧉</button></div>`).join("")}
     ${mine.length > 6 ? `<small class="muted">+${mine.length - 6} more</small>` : ""}<small class="muted">Tickets are saved in this browser. Keep a copy of your ticket number in case you switch devices.</small></div>` : "";
   const top = [...d.prizes].sort((a, b) => b.value - a.value)[0], worth = d.prizes.reduce((t, p) => t + p.value, 0);
   const headline = drawn ? esc(d.title) : d.prizes.length > 1 ? `Win prizes worth <span class="dz-worth">${money(worth)}</span>` : `Win a <span class="dz-worth">${money(top?.value || 0)}</span> prize`;
-  const pitch = drawn ? "" : `<p class="dz-pitch">Enter free in one tap — or grab a <b>${money(d.entryPrice)} ${vName}</b> that's <b>yours to keep, win or not</b>, with an entry included.</p>`;
+  const deal = d.voucherValue > d.entryPrice + 0.001;
+  const pitch = drawn ? "" : `<p class="dz-pitch">Enter free in one tap — or grab a <b>${money(d.voucherValue)} ${vName}${deal ? ` for just ${money(d.entryPrice)}` : ""}</b> that's <b>yours to keep, win or not</b>, with an entry included.${d.orderEntryPer ? ` Plus, <b>every ${money(d.orderEntryPer)} you spend = 1 entry</b>.` : ""}</p>`;
   slot.innerHTML = `<div class="az-spot-copy dz"><span class="eyebrow">🎡 ${drawn ? "LeeysPremium prize draw" : esc(d.title)}</span><h2>${headline}</h2>${pitch}<div class="dz-prizes">${prizes}</div>${body}${tickets}</div>
     <div class="dz-wheel">${wheelSVG(d.prizes)}${drawn && !sessionStorage.getItem("lp_spun_" + d.id) ? `<button class="btn accent dz-spin" id="dzSpin">Spin to reveal the winners</button>` : ""}</div>`;
   if (open && $("#dzCd")) DRAW.timer = setInterval(() => { const c = $("#dzCd"); if (!c) return clearInterval(DRAW.timer); if (new Date(d.drawAt) <= Date.now()) { clearInterval(DRAW.timer); setTimeout(loadDraw, 4000); } c.innerHTML = countdown(d.drawAt); }, 1000);
@@ -1029,9 +1033,9 @@ function payEntry() {
   const top = [...d.prizes].sort((a, b) => b.value - a.value)[0], total = d.prizes.reduce((t, p) => t + p.value, 0);
   m.innerHTML = `<div class="offer dz-modal"><button class="offer-x" aria-label="Close">✕</button>
     ${top?.image ? `<img class="pe-img" src="${esc(top.image)}" alt="">` : `<div class="offer-burst">🎁</div>`}
-    <span class="offer-eb">Get a ${money(d.entryPrice)} ${vName}</span>
+    <span class="offer-eb">Get a ${money(d.voucherValue)} ${vName}${d.voucherValue > d.entryPrice + 0.001 ? ` for ${money(d.entryPrice)}` : ""}</span>
     <h3 class="pe-h">…and a chance to win ${d.prizes.length > 1 ? `prizes worth <b>${money(total)}</b>` : `a <b>${money(top?.value || 0)}</b> prize`}</h3>
-    <ul class="pe-list"><li><b>Your ${money(d.entryPrice)} ${vName} is yours to keep</b> — win or not. Use it on any order within 180 days.</li>
+    <ul class="pe-list"><li><b>Your ${money(d.voucherValue)} ${vName} is yours to keep</b> — win or not. Use it on any order within 180 days.${d.voucherValue > d.entryPrice + 0.001 ? ` That's ${money(d.voucherValue - d.entryPrice)} of value for free.` : ""}</li>
       <li>Each voucher includes <b>1 entry</b> to win ${top ? esc(top.title.slice(0, 48)) + (d.prizes.length > 1 ? ` + ${d.prizes.length - 1} more prize${d.prizes.length > 2 ? "s" : ""}` : "") : "the prize"}.</li>
       <li>Winners drawn ${fmtWhen(d.drawAt)}.</li></ul>
     <div class="dz-qty"><button data-q="-1">−</button><span id="pq">1</span><button data-q="1">+</button></div><div class="muted" id="pTot" style="margin:-4px 0 10px">${money(d.entryPrice)} · 1 voucher + 1 entry</div>
@@ -1099,7 +1103,8 @@ async function drawRules() {
     <h3>2. Who can enter</h3><p>Open to individuals who have reached the age of majority where they live and are residents of: ${esc(where)}. Entries from other places are not accepted.</p>
     <h3>3. Entry period and draw date</h3><p>Entries are accepted until <b>${fmtWhen(d.drawAt)}</b>. Winners are drawn at that time, whatever the number of entries. The "prize goal" progress bar is for information only and does not change the draw date.</p>
     <h3>4. How to enter</h3><ul><li><b>Free entry:</b> tap "Enter free" on the homepage. Limit ${d.freePerDay} free entr${d.freePerDay === 1 ? "y" : "ies"} per person/device per day.</li>
-      <li><b>With a voucher:</b> buy a ${money(d.entryPrice)} ${vName} (valid 180 days on future orders); each voucher includes one entry.</li>
+      <li><b>With a voucher:</b> buy a ${money(d.voucherValue)} ${vName} for ${money(d.entryPrice)} (valid 180 days on future orders); each voucher includes one entry.</li>
+      ${d.orderEntryPer ? `<li><b>With an order:</b> each ${money(d.orderEntryPer)} of products in a paid order (after discounts, before shipping) earns one entry, up to 20 per order, during the entry period.</li>` : ""}
       <li>Free entries and voucher entries are treated exactly the same in the draw. Automated or bulk entries are void.</li></ul>
     <h3>5. Prizes</h3><ul>${d.prizes.map((p) => `<li>${esc(p.title)} — approximate retail value ${money(p.value)}, shipped free to the winner.</li>`).join("")}</ul><p>One prize per winning ticket. Prizes can't be exchanged for cash. Odds depend on the number of entries received.</p>
     <h3>6. How winners are chosen</h3><p>Winners are picked at random by computer, one per prize, from all valid tickets. To make the draw verifiable, the SHA-256 fingerprint of a secret random seed is published before the draw:<br><code style="word-break:break-all">${esc(d.seedHash)}</code><br>

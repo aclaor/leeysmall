@@ -59,7 +59,7 @@ async function draws(editId) {
   const picked = edit ? [...edit.prizes] : [];
   const prizeVal = () => picked.reduce((t, id) => t + (prods.find((p) => p.id === id)?.price || 0), 0);
   const f = edit || { title: "LeeysPremium Prize Draw", entry_price: 1, voucher_type: "shipping", draw_at: new Date(Date.now() + 7 * 864e5).toISOString(), goal: 0, show_progress: 1, countries: "US", consolation: 1, consolation_min: 0,
-    consolation_days: 60, auto_vouchers: 1, notify: 1, free_per_day: 1, paid_per_day: 10, claim_days: 14, permit: "" };
+    consolation_days: 60, auto_vouchers: 1, notify: 1, free_per_day: 1, paid_per_day: 10, claim_days: 14, permit: "", voucher_value: 2, order_entry_per: 10 };
   main().innerHTML = `<div class="row-between" style="flex-wrap:wrap;gap:10px"><h1 style="margin:0">Prize Draw</h1>${showForm ? "" : `<button class="btn" id="dwNew">+ New prize draw</button>`}</div>
     <p class="muted" style="margin:6px 0 16px">A sweepstakes with a spinning prize wheel on your homepage. Anyone can enter <b>free</b> (one tap, no email) or get an entry with each ${money(1)} voucher they buy. Winners are drawn at random on the date you publish, with a public, checkable method. Before running one, make sure it's allowed in the countries you choose (e.g. a DTI permit for the Philippines) — a quick check with a lawyer is wise.</p>
     ${showForm ? `<div class="panel"><b>${edit ? "Edit prize draw" : "New prize draw"}</b>${edit?.status === "live" ? `<p class="note" style="margin-top:10px">This draw is live: the date can only move later, and entrants keep their tickets.</p>` : ""}
@@ -68,6 +68,8 @@ async function draws(editId) {
         <div style="grid-column:1/-1"><div class="row-between"><b style="font-size:14px">Prizes (1–3 products, one winner each)</b><button type="button" class="btn sm ghost" id="dwPick">Choose products…</button></div><div id="dwPrizes" style="margin-top:8px"></div></div>
         <label>Draw date & time (your time)<input class="inp" type="datetime-local" name="drawAt" value="${local(f.draw_at)}" required></label>
         <label>Voucher price per entry ($)<input class="inp" type="number" step="0.01" min="0.5" name="entryPrice" value="${f.entry_price}"></label>
+        <label>Voucher is worth ($) <span class="muted">— more than its price makes it a deal</span><input class="inp" type="number" step="0.01" min="0" name="voucherValue" value="${f.voucher_value > 0 ? f.voucher_value : f.entry_price}"></label>
+        <label>Entries from orders: 1 entry per $ spent (0 = off)<input class="inp" type="number" step="1" min="0" name="orderEntryPer" value="${f.order_entry_per || 0}" placeholder="e.g. 10"></label>
         <label>Voucher bought<select class="inp" name="voucherType"><option value="shipping" ${f.voucher_type === "shipping" ? "selected" : ""}>Shipping voucher</option><option value="amount" ${f.voucher_type === "amount" ? "selected" : ""}>Store voucher ($ off order)</option></select></label>
         <label>Prize goal ($) <span class="muted" id="dwGoalHint"></span><input class="inp" type="number" step="0.01" min="0" name="goal" value="${f.goal || ""}" placeholder="Prize value + shipping"></label>
         <label style="grid-column:1/-1">Countries that can enter (codes, comma separated, or ALL)<input class="inp" name="countries" value="${esc(f.countries)}" placeholder="US, PH"></label>
@@ -84,7 +86,7 @@ async function draws(editId) {
         ${edit?.status === "live" ? `<label class="flex" style="gap:8px;grid-column:1/-1"><input type="checkbox" name="confirmPrizes"> I understand I'm changing the prizes of a live draw</label>` : ""}
         <div style="grid-column:1/-1" class="flex"><button class="btn">Save</button><button type="button" class="btn ghost" id="dwCancel">Back</button></div></form></div>`
     : list.length ? list.map((d) => `<div class="panel"><div class="row-between" style="flex-wrap:wrap;gap:8px"><div><b style="font-size:17px">${esc(d.title)}</b> <span class="badge" style="${STATUS[d.status]?.[1] || ""}">${STATUS[d.status]?.[0] || d.status}</span>
-        <div class="muted" style="font-size:13px;margin-top:4px">Draw ${new Date(d.draw_at).toLocaleString()} · ${d.entries} entries (${d.paid} with voucher = ${money(d.paid * d.entry_price)})${d.goal ? ` · goal ${money(d.goal)} → ${Math.min(100, Math.round((d.paid * d.entry_price / d.goal) * 100))}%` : ""} · open to ${esc(d.countries)}</div></div>
+        <div class="muted" style="font-size:13px;margin-top:4px">Draw ${new Date(d.draw_at).toLocaleString()} · ${d.voucher_value > d.entry_price ? `${money(d.voucher_value)} voucher for ${money(d.entry_price)} · ` : ""}${d.order_entry_per ? `1 entry per ${money(d.order_entry_per)} ordered · ` : ""}${d.entries} entries (${d.paid} with voucher = ${money(d.paid * d.entry_price)})${d.goal ? ` · goal ${money(d.goal)} → ${Math.min(100, Math.round((d.paid * d.entry_price / d.goal) * 100))}%` : ""} · open to ${esc(d.countries)}</div></div>
         <div class="flex" style="gap:6px;flex-wrap:wrap">${["draft", "live"].includes(d.status) ? `<button class="btn sm ghost" data-dw-edit="${d.id}">Edit</button>` : ""}${d.status === "draft" ? `<button class="btn sm" data-dw-act="publish" data-id="${d.id}">Publish (go live)</button>` : ""}
           ${d.status === "live" ? `<button class="btn sm" data-dw-act="draw" data-id="${d.id}" ${new Date(d.draw_at) > Date.now() ? "disabled title='Available from the published draw time'" : ""}>Draw winners now</button>` : ""}
           ${["draft", "live"].includes(d.status) ? `<button class="btn sm ghost" data-dw-act="cancel" data-id="${d.id}">Cancel</button>` : ""}<button class="btn sm ghost" data-dw-tix="${d.id}">Tickets & winners</button></div></div>
@@ -106,7 +108,7 @@ async function draws(editId) {
     const t = await api(`/api/admin/draws/${b.dataset.dwTix}/tickets`);
     box.innerHTML = `<div style="margin-top:12px;font-size:13px" class="muted">By country: ${t.byCountry.map((c) => `${esc(c.country || "?")} ${c.n}`).join(" · ") || "—"}</div>
       <div class="tbl-wrap" style="margin-top:8px"><table><tr><th>Ticket</th><th>Type</th><th>Country</th><th>Entered</th><th>Result</th><th>Voucher</th><th>Winner's shipping details</th></tr>${t.tickets.map((x) => `<tr>
-        <td><code>${esc(x.code)}</code></td><td>${x.kind === "paid" ? "Voucher" : "Free"}</td><td>${esc(x.country || "")}</td><td>${esc(x.created_at.slice(0, 16))}</td>
+        <td><code>${esc(x.code)}</code></td><td>${x.kind === "paid" ? "Voucher" : x.kind === "order" ? "Order" : "Free"}</td><td>${esc(x.country || "")}</td><td>${esc(x.created_at.slice(0, 16))}</td>
         <td>${x.result === "won" ? `🏆 ${esc(name(x.prize_id))}` : x.result === "lost" ? "—" : ""}</td><td>${esc(x.voucher_code || x.consolation_code || "")}</td>
         <td>${x.claim ? `${esc(x.claim.name)}, ${esc(x.claim.address1)}${x.claim.address2 ? ", " + esc(x.claim.address2) : ""}, ${esc(x.claim.city)} ${esc(x.claim.province || "")} ${esc(x.claim.zip)}, ${esc(x.claim.country)}<br>${esc(x.claim.email)} ${esc(x.claim.phone || "")}` : x.result === "won" ? "<span class='muted'>Not claimed yet</span>" : ""}</td></tr>`).join("")}</table></div>`;
   }));
@@ -133,7 +135,7 @@ async function draws(editId) {
     e.preventDefault(); const F = e.target;
     if (!picked.length) return toast("Choose at least one prize product");
     try {
-      await api("/api/admin/draws", "POST", { id: edit?.id, title: F.title.value, prizes: picked, drawAt: new Date(F.drawAt.value).toISOString(), entryPrice: F.entryPrice.value, voucherType: F.voucherType.value,
+      await api("/api/admin/draws", "POST", { id: edit?.id, title: F.title.value, prizes: picked, drawAt: new Date(F.drawAt.value).toISOString(), entryPrice: F.entryPrice.value, voucherValue: F.voucherValue.value, orderEntryPer: F.orderEntryPer.value, voucherType: F.voucherType.value,
         goal: F.goal.value || prizeVal(), showProgress: F.showProgress.checked, countries: F.countries.value, freePerDay: F.freePerDay.value, paidPerDay: F.paidPerDay.value, claimDays: F.claimDays.value,
         permit: F.permit.value, notify: F.notify.checked, autoVouchers: F.autoVouchers.checked, consolation: F.consolation.value, consolationMin: F.consolationMin.value, consolationDays: F.consolationDays.value, confirmPrizes: F.confirmPrizes?.checked });
       toast(edit ? "Saved" : "Draft created — publish it when ready"); draws();

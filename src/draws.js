@@ -26,7 +26,7 @@ export async function publicDraw(env, d, cc) {
   const prizes = ids.map((id) => rows.find((r) => r.id === id)).filter(Boolean).map((r) => ({ id: r.id, title: r.title, value: r.price, image: parse(r.images, [])[0] || null }));
   const st = await env.DB.prepare("SELECT COUNT(*) n, SUM(kind='paid') paid FROM tickets WHERE draw_id=? AND status='active'").bind(d.id).first();
   const raised = (st.paid || 0) * d.entry_price;
-  const out = { id: d.id, title: d.title, prizes, entryPrice: d.entry_price, voucherType: d.voucher_type, drawAt: d.draw_at, status: d.status, entries: st.n || 0,
+  const out = { id: d.id, title: d.title, prizes, entryPrice: d.entry_price, voucherValue: d.voucher_value > 0 ? d.voucher_value : d.entry_price, orderEntryPer: d.order_entry_per || 0, voucherType: d.voucher_type, drawAt: d.draw_at, status: d.status, entries: st.n || 0,
     countries: d.countries, eligible: eligibleCountry(d, cc), country: cc || "", seedHash: d.seed_hash, claimDays: d.claim_days, freePerDay: d.free_per_day,
     consolation: d.auto_vouchers ? { amount: d.consolation, min: d.consolation_min, days: d.consolation_days } : null, permit: d.permit || "", notify: !!d.notify };
   if (d.show_progress && d.goal > 0) out.progress = Math.min(100, Math.round((raised / d.goal) * 100));
@@ -146,3 +146,15 @@ export async function ipHash(env, ip) {
 }
 export const newSeed = () => hex(crypto.getRandomValues(new Uint8Array(32)));
 export { fromB64u };
+
+// Entries earned with a real order: 1 per $X of product subtotal after discounts (max 20 per order), for the draw that's open now
+export async function orderEntries(env, o) {
+  const d = await env.DB.prepare("SELECT * FROM draws WHERE status='live' AND order_entry_per > 0 AND draw_at > ? ORDER BY id DESC LIMIT 1").bind(new Date().toISOString()).first();
+  if (!d || !eligibleCountry(d, o.country)) return 0;
+  const n = Math.min(20, Math.floor(Math.max(0, (o.subtotal || 0) - (o.discount || 0)) / d.order_entry_per + 1e-9));
+  if (!n || (await env.DB.prepare("SELECT 1 FROM tickets WHERE order_id=? LIMIT 1").bind(o.id).first())) return 0;
+  const day = new Date().toISOString().slice(0, 10);
+  await env.DB.batch(Array.from({ length: n }, () => env.DB.prepare("INSERT INTO tickets (code, draw_id, kind, device, country, day, order_id) VALUES (?,?,'order',?,?,?,?)")
+    .bind(ticketCode(), d.id, o.device || null, o.country || "", day, o.id)));
+  return n;
+}

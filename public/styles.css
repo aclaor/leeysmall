@@ -981,3 +981,6 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .dz-worth { color: #ffd23f; text-shadow: 0 0 24px rgba(255,210,63,.35); }
 .dz-pitch { margin: -4px 0 2px; color: var(--ink-2); font-size: 15px; line-height: 1.5; } .dz-pitch b { color: #fff; }
 .dz-pay { flex-direction: column; gap: 0; line-height: 1.2; } .dz-pay small { font-size: 11px; font-weight: 500; color: #49d79a; margin-top: 2px; }
+.dz-shop { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 14px; border: 1px solid rgba(73,215,154,.35); background: rgba(73,215,154,.08); color: var(--ink-2); font-size: 20px; }
+.dz-shop span { display: grid; flex: 1; font-size: 14px; } .dz-shop b { color: #fff; } .dz-shop small { font-size: 12px; color: var(--muted); }
+.dz-shop i { font-style: normal; font-size: 13px; font-weight: 700; color: #49d79a; white-space: nowrap; } .dz-shop:hover { border-color: #49d79a; }

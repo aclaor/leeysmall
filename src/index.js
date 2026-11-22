@@ -7,7 +7,7 @@ import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, s
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
 import { cryptoReady, createCryptoInvoice, verifyIpn } from "./crypto-pay.js";
-import { publicDraw, currentDraw, runDueDraws, runDraw, vapidKeys, pushNotice, notifyDraw, turnstileOk, ipHash, ticketCode, eligibleCountry, newSeed, sha256 } from "./draws.js";
+import { publicDraw, currentDraw, runDueDraws, runDraw, vapidKeys, pushNotice, notifyDraw, turnstileOk, ipHash, ticketCode, eligibleCountry, newSeed, sha256, orderEntries } from "./draws.js";
 import { cjSearch, cjCategories, cjProduct, cjPageVideo, cjToRecord, cjStock, cjCreateOrder, cjOrderDetail } from "./cj.js";
 
 /* ---------------- helpers ---------------- */
@@ -188,6 +188,7 @@ async function afterPaid(env, ctx, o) {
   const items = parse(o.items, []);
   await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.gift ? 0 : l.qty, l.id)));
   ctx.waitUntil(fulfil(env, o.id).catch(() => {}));
+  try { await orderEntries(env, o); } catch (e) { console.error("order entries", e); }
 }
 const REVIEWABLE = new Set(["paid", "processing", "action_needed", "shipped", "delivered"]);
 async function refreshRating(env, pid) {
@@ -243,7 +244,8 @@ async function handleRoutes(req, env, ctx) {
     const used = await env.DB.prepare("SELECT COUNT(*) n FROM tickets WHERE draw_id=? AND kind='paid' AND device=? AND day=? AND status='active'").bind(d.id, dev, day).first();
     if (used.n + qty > (d.paid_per_day || 10)) return bad(`The limit is ${d.paid_per_day || 10} voucher entries per day.`, 429);
     const ref = "DRW" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
-    const label = d.voucher_type === "shipping" ? `$${d.entry_price.toFixed(2)} shipping voucher + prize draw entry` : `$${d.entry_price.toFixed(2)} store voucher + prize draw entry`;
+    const vv = d.voucher_value > 0 ? d.voucher_value : d.entry_price;
+    const label = d.voucher_type === "shipping" ? `$${vv.toFixed(2)} shipping voucher + prize draw entry` : `$${vv.toFixed(2)} store voucher + prize draw entry`;
     let ppId;
     try { ppId = await createPaypalOrder(env, { id: ref, items: [{ title: label, price: d.entry_price, qty }], total: Math.round(d.entry_price * qty * 100) / 100, shipping: 0, discount: 0 }); }
     catch (e) { return bad(e.message, 502); }
@@ -254,7 +256,7 @@ async function handleRoutes(req, env, ctx) {
   }
   if (path === "/api/draw/pay/capture" && m === "POST") {
     const b = await body(req), ppId = str(b.paypalOrderId, 60);
-    const pend = (await env.DB.prepare("SELECT t.*, d.entry_price, d.voucher_type, d.title FROM tickets t JOIN draws d ON d.id=t.draw_id WHERE t.paypal_order_id=?").bind(ppId).all()).results;
+    const pend = (await env.DB.prepare("SELECT t.*, d.entry_price, d.voucher_type, d.voucher_value, d.title FROM tickets t JOIN draws d ON d.id=t.draw_id WHERE t.paypal_order_id=?").bind(ppId).all()).results;
     if (!pend.length) return bad("Purchase not found", 404);
     if (pend[0].status !== "active") {
       let cap; try { cap = await capturePaypalOrder(env, ppId); } catch (e) { return bad(e.message, 402); }
@@ -263,8 +265,9 @@ async function handleRoutes(req, env, ctx) {
       const st = [];
       for (const t of pend) {
         const vc = (pend[0].voucher_type === "shipping" ? "SHIP" : "SAVE") + "-" + t.code.slice(3).replace("-", "");
+        const val = pend[0].voucher_value > 0 ? pend[0].voucher_value : t.entry_price;
         st.push(env.DB.prepare(`INSERT OR IGNORE INTO discounts (code, percent, type, amount, ends_at, label, max_uses, show, active, scope) VALUES (?,0,?,?,?,?,1,0,1,'all')`)
-          .bind(vc, pend[0].voucher_type === "shipping" ? "shipping" : "amount", t.entry_price, ends, pend[0].voucher_type === "shipping" ? `$${t.entry_price.toFixed(2)} off shipping` : `$${t.entry_price.toFixed(2)} off your order`));
+          .bind(vc, pend[0].voucher_type === "shipping" ? "shipping" : "amount", val, ends, pend[0].voucher_type === "shipping" ? `$${val.toFixed(2)} off shipping` : `$${val.toFixed(2)} off your order`));
         st.push(env.DB.prepare("UPDATE tickets SET status='active', voucher_code=? WHERE code=?").bind(vc, t.code));
         t.voucher_code = vc;
       }
@@ -276,10 +279,10 @@ async function handleRoutes(req, env, ctx) {
   if (path === "/api/draw/mine" && m === "POST") { // tickets on this device (+ any ticket codes the shopper typed in)
     await runDueDraws(env, ctx);
     const b = await body(req), dev = str(b.device, 64), codes = (Array.isArray(b.codes) ? b.codes : []).slice(0, 30).map((c) => str(c, 20).toUpperCase());
-    const rows = (await env.DB.prepare(`SELECT t.code, t.kind, t.draw_id, t.result, t.prize_id, t.voucher_code, t.consolation_code, t.claim IS NOT NULL claimed, t.created_at, d.title, d.claim_days, d.drawn_at
+    const rows = (await env.DB.prepare(`SELECT t.code, t.kind, t.draw_id, t.order_id, t.result, t.prize_id, t.voucher_code, t.consolation_code, t.claim IS NOT NULL claimed, t.created_at, d.title, d.claim_days, d.drawn_at
       FROM tickets t JOIN draws d ON d.id=t.draw_id WHERE t.status='active' AND (t.device=? ${codes.length ? `OR t.code IN (${codes.map(() => "?").join(",")})` : ""}) ORDER BY t.created_at DESC LIMIT 200`)
       .bind(dev || "-", ...codes).all()).results;
-    return json({ tickets: rows.map((r) => ({ code: r.code, kind: r.kind, drawId: r.draw_id, result: r.result, prizeId: r.prize_id, voucher: r.voucher_code, consolation: r.consolation_code, claimed: !!r.claimed, drawTitle: r.title,
+    return json({ tickets: rows.map((r) => ({ code: r.code, kind: r.kind, drawId: r.draw_id, orderId: r.order_id || null, result: r.result, prizeId: r.prize_id, voucher: r.voucher_code, consolation: r.consolation_code, claimed: !!r.claimed, drawTitle: r.title,
       claimBy: r.drawn_at ? new Date(new Date(r.drawn_at.replace(" ", "T") + "Z").getTime() + r.claim_days * 864e5).toISOString() : null })) });
   }
   if (path === "/api/draw/claim" && m === "POST") {
@@ -428,9 +431,9 @@ async function handleRoutes(req, env, ctx) {
     const order = { id, items: o.lines, total: o.total, shipping: o.shipping, discount: o.discount, shipDiscount: o.shipDiscount };
     let paypalId;
     try { paypalId = await createPaypalOrder(env, order); } catch (e) { return bad(e.message, 502); }
-    await env.DB.prepare(`INSERT INTO orders (id,email,name,phone,address,country,items,subtotal,discount,discount_code,shipping,total,cost_total,paypal_order_id,status,marketing,ship_code,ship_discount)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?)`).bind(id, email, name, str(a.phone, 30), JSON.stringify(address), o.country, JSON.stringify(o.lines),
-      o.subtotal, o.discount, o.code, o.shipping, o.total, o.cost_total, paypalId, b.marketing ? 1 : 0, o.shipCode, o.shipDiscount || 0).run();
+    await env.DB.prepare(`INSERT INTO orders (id,email,name,phone,address,country,items,subtotal,discount,discount_code,shipping,total,cost_total,paypal_order_id,status,marketing,ship_code,ship_discount,device)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?)`).bind(id, email, name, str(a.phone, 30), JSON.stringify(address), o.country, JSON.stringify(o.lines),
+      o.subtotal, o.discount, o.code, o.shipping, o.total, o.cost_total, paypalId, b.marketing ? 1 : 0, o.shipCode, o.shipDiscount || 0, /^[\w-]{16,64}$/.test(str(b.device, 64)) ? str(b.device, 64) : null).run();
     return json({ orderId: id, paypalOrderId: paypalId });
   }
 
@@ -461,9 +464,9 @@ async function handleRoutes(req, env, ctx) {
     address.countryName = COUNTRY_NAMES[o.country] || o.country;
     const id = newOrderId();
     let inv; try { inv = await createCryptoInvoice(env, { orderId: id, amount: o.total, description: "LeeysPremium order " + id, base: siteUrl(env, req) }); } catch (e) { return bad(e.message, 502); }
-    await env.DB.prepare(`INSERT INTO orders (id,email,name,phone,address,country,items,subtotal,discount,discount_code,shipping,total,cost_total,status,marketing,ship_code,ship_discount,pay_method,crypto_invoice)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,'crypto',?)`).bind(id, email, name, str(a.phone, 30), JSON.stringify(address), o.country, JSON.stringify(o.lines),
-      o.subtotal, o.discount, o.code, o.shipping, o.total, o.cost_total, b.marketing ? 1 : 0, o.shipCode, o.shipDiscount || 0, inv.id).run();
+    await env.DB.prepare(`INSERT INTO orders (id,email,name,phone,address,country,items,subtotal,discount,discount_code,shipping,total,cost_total,status,marketing,ship_code,ship_discount,pay_method,crypto_invoice,device)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,'crypto',?,?)`).bind(id, email, name, str(a.phone, 30), JSON.stringify(address), o.country, JSON.stringify(o.lines),
+      o.subtotal, o.discount, o.code, o.shipping, o.total, o.cost_total, b.marketing ? 1 : 0, o.shipCode, o.shipDiscount || 0, inv.id, /^[\w-]{16,64}$/.test(str(b.device, 64)) ? str(b.device, 64) : null).run();
     return json({ orderId: id, url: inv.url });
   }
   // NOWPayments tells us when a crypto payment changes status (signed with your IPN secret)
@@ -631,7 +634,8 @@ async function admin(req, env, ctx, path, m, url) {
       countries: (str(b.countries, 400).toUpperCase().replace(/[^A-Z,\s]/g, "").split(/[\s,]+/).filter(Boolean).join(",")) || "US",
       consolation: Math.max(0, Number(b.consolation) || 0), consolation_min: Math.max(0, Number(b.consolationMin) || 0), consolation_days: Math.max(1, Math.min(365, Number(b.consolationDays) || 60)),
       auto_vouchers: b.autoVouchers ? 1 : 0, notify: b.notify ? 1 : 0, free_per_day: Math.max(1, Math.min(5, Number(b.freePerDay) || 1)), paid_per_day: Math.max(1, Math.min(50, Number(b.paidPerDay) || 10)),
-      claim_days: Math.max(3, Math.min(60, Number(b.claimDays) || 14)), permit: str(b.permit, 200) };
+      claim_days: Math.max(3, Math.min(60, Number(b.claimDays) || 14)), permit: str(b.permit, 200),
+      voucher_value: Math.max(0, Math.min(100, Number(b.voucherValue) || 0)), order_entry_per: Math.max(0, Math.min(1000, Number(b.orderEntryPer) || 0)) };
     if (id) {
       const cur = await env.DB.prepare("SELECT status, draw_at FROM draws WHERE id=?").bind(id).first(); if (!cur) return bad("Not found", 404);
       if (cur.status === "drawn" || cur.status === "drawing") return bad("This draw has already happened.");
