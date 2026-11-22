@@ -32,7 +32,7 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["reviews", "Reviews"], ["draws", "Prize Draw"], ["spinwin", "Spin & Win"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["reviews", "Reviews"], ["draws", "Prize Draw"], ["spinwin", "Spin & Win"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["tiles", "Homepage tiles"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
@@ -45,7 +45,7 @@ window.addEventListener("hashchange", () => { const t = location.hash.slice(1); 
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, insights, orders, reviews, draws, spinwin, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, insights, orders, reviews, draws, spinwin, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup, tiles: homeTiles }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
 
@@ -1069,6 +1069,13 @@ async function subscribers() {
 }
 
 /* ---------- Setup ---------- */
+// Homepage tiles: same panel as in Setup, opened on its own so it's easy to find
+async function homeTiles() {
+  await setup();
+  const panel = $("#tilesPanel"); if (!panel) return;
+  [...main().children].forEach((el) => { if (el !== panel) el.remove(); });
+  panel.insertAdjacentHTML("beforebegin", `<h1>Homepage tiles</h1><p class="muted" style="margin:-6px 0 16px">Choose which products appear on the big colourful cards at the top of your homepage (Free US delivery, Flash sale, Top picks in each category…). Click <b>Choose…</b> on a card, tick up to 2 products, and save. The first product's video plays automatically if it has one.</p>`);
+}
 async function setup() {
   const [s, prods] = await Promise.all([api("/api/admin/stats"), api("/api/admin/products")]);
   const row = (ok, t, d) => `<div><span class="dot ${ok ? "ok" : ""}"></span><div><b>${t}</b><div class="muted" style="font-size:13px">${d}</div></div></div>`;
@@ -1110,7 +1117,7 @@ async function setup() {
     <div class="tbl-wrap"><table><tr><th>Tile</th><th>Products shown</th><th></th></tr>${TILES.map(([k, name]) => { const ids = (tilesCfg[k] || []).filter((id) => prods.some((p) => p.id === id));
       return `<tr><td><b>${esc(name)}</b></td><td>${ids.length ? ids.map((id, i) => { const p = prods.find((x) => x.id === id); return `<div class="flex" style="gap:8px;margin:3px 0">${thumb(p)}<span style="font-size:13px">${i === 0 && p.video ? "🎬 " : ""}${esc(p.title.slice(0, 50))}</span></div>`; }).join("") : `<span class="muted">Automatic</span>`}</td>
         <td style="white-space:nowrap"><button class="btn sm ghost" data-tpick="${esc(k)}">Choose…</button>${ids.length ? ` <button class="btn sm ghost" data-tauto="${esc(k)}">Automatic</button>` : ""}</td></tr>`; }).join("")}</table></div></div>`);
-  const saveTile = async (key, ids, msg) => { try { await api("/api/admin/tiles", "PUT", { key, ids }); toast(msg); setup(); } catch (er) { toast(er.message); } };
+  const saveTile = async (key, ids, msg) => { try { await api("/api/admin/tiles", "PUT", { key, ids }); toast(msg); (tab === "tiles" ? homeTiles : setup)(); } catch (er) { toast(er.message); } };
   main().querySelectorAll("[data-tauto]").forEach((b) => (b.onclick = () => saveTile(b.dataset.tauto, [], "Tile is automatic again")));
   main().querySelectorAll("[data-tpick]").forEach((b) => (b.onclick = () => {
     const key = b.dataset.tpick, picked = [...(tilesCfg[key] || [])].filter((id) => prods.some((p) => p.id === id));
