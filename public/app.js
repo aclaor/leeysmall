@@ -119,6 +119,12 @@ function updateCount() { const n = cart.count(), el = $("#cartCount"); el.textCo
 
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), 2200); }
 
+function spinProgress(sub) {
+  const ps = SPINS.promos || []; if (!ps.length) return "";
+  const next = ps.filter((p) => p.minSpend > sub).sort((a, b) => a.minSpend - b.minSpend)[0], got = ps.filter((p) => p.minSpend <= sub);
+  if (next) return `<div class="spin-progress">🎡 Add <b>${money(next.minSpend - sub)}</b> more to unlock a <b>free spin</b> — every spin wins a gift<div class="bar"><i style="width:${Math.min(100, (sub / next.minSpend) * 100)}%"></i></div></div>`;
+  return got.length ? `<div class="spin-progress done">🎉 This order unlocks <b>${got.length > 1 ? got.length + " free spins" : "a free spin"}</b> — spin after you pay!</div>` : "";
+}
 function shipProgress(sub) {
   const left = FREE_SHIP - sub, pct = Math.min(100, (sub / FREE_SHIP) * 100);
   return `<div class="ship-progress">${left > 0 ? `You're <b>${money(left)}</b> away from free US shipping` : "🎉 You've unlocked <b>free US shipping</b>"}<div class="bar"><i style="width:${pct}%"></i></div></div>`;
@@ -128,7 +134,7 @@ function qtyCtl(key, q) { return `<div class="qty"><button data-q="${key}" data-
 function renderDrawer() {
   const d = $("#drawer"), lines = cart.lines(), sub = cart.subtotal();
   d.innerHTML = `<div class="drawer-head"><h3>Your cart (${cart.count()})</h3><button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
-  ${lines.length ? shipProgress(sub) + (offerCode() ? `<div class="offer-strip">🎉 <b>${CONFIG.cartOffer.percent}% off</b> applied at checkout · code ${esc(offerCode())}</div>` : "") + `<div class="drawer-items">${lines.map((l) => `
+  ${lines.length ? shipProgress(sub) + spinProgress(sub) + (offerCode() ? `<div class="offer-strip">🎉 <b>${CONFIG.cartOffer.percent}% off</b> applied at checkout · code ${esc(offerCode())}</div>` : "") + `<div class="drawer-items">${lines.map((l) => `
     <div class="line"><a class="thumb" href="/products/${l.id}" data-link>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</a>
       <div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div>
       <b>${money(l.p.price * l.qty)}</b></div>`).join("")}${giftRows(cartGifts(lines))}</div>
@@ -332,6 +338,7 @@ function home() {
   ${onSale.length ? `<section class="az-bleed"><div class="wrap"><div class="az-bleed-head"><h2><a class="hlink" href="/collections/all?deal=today" data-link>⚡ Flash sale ›</a></h2><span class="flash-timer">Ends in <b data-ends="${flashEnds}">${timeLeft(flashEnds)}</b></span><a href="/collections/all?sort=deals" data-link>See all deals ›</a></div>
     <div class="az-rel"><div class="az-rail" data-rail>${onSale.slice(0, 20).map(card).join("")}</div><button class="az-arrow l" data-rl="-1" aria-label="Scroll left">‹</button><button class="az-arrow r" data-rl="1" aria-label="Scroll right">›</button></div></div></section>` : ""}
   ${shelf("Top picks for you", "/collections/all?sort=top", best)}
+  <section class="spin-home" id="spinSlot"></section>
   <section class="az-spot" id="draw"><div class="wrap"><div class="az-panel az-spot-in" id="drawSlot">
     <div class="az-spot-copy"><span class="eyebrow">LeeysPremium spotlight${maxOff >= 10 ? ` · Up to ${maxOff}% off` : ""}</span><h2>Everything you need, in one place.</h2>
       <p>Home, tech, fashion, beauty, outdoors and more — fairly priced and shipped fast, with US warehouses for quicker delivery.</p>
@@ -347,6 +354,7 @@ function home() {
   bindVouchers();
   tileVideos();
   loadDraw();
+  renderSpinHome();
 }
 // Tile videos load and play only while visible (keeps the page fast and data-light on phones).
 let tileObs = null;
@@ -763,7 +771,7 @@ function cartPage() {
   document.title = "Cart — LeeysPremium";
   const lines = cart.lines(), sub = cart.subtotal();
   app.innerHTML = `<div class="wrap prose" style="max-width:900px"><h1>Your cart</h1>${lines.length ? `
-    ${shipProgress(sub)}${lines.map((l) => `<div class="line"><a class="thumb" href="/products/${l.id}" data-link>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</a><div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
+    ${shipProgress(sub)}${spinProgress(sub)}${lines.map((l) => `<div class="line"><a class="thumb" href="/products/${l.id}" data-link>${variantImg(l.p, l.variant) ? photoTag(variantImg(l.p, l.variant), l.p.title) : art(l.p)}</a><div><div class="t">${esc(l.p.title)}</div>${l.variant ? `<div class="v">${esc(l.variant)}</div>` : ""}<div style="margin-top:8px">${qtyCtl(l.key, l.qty)}</div><button class="rm" data-rm="${l.key}">Remove</button></div><b>${money(l.p.price * l.qty)}</b></div>`).join("")}
     ${giftRows(cartGifts(lines))}    <div class="row-between" style="margin:24px 0 8px;font-size:18px"><span>Subtotal</span><b>${money(sub)}</b></div><p class="muted">Taxes and shipping calculated at checkout.</p>
     <a class="btn accent" href="/checkout" data-link>Checkout</a>`
   : `<div class="empty"><p>Your cart is empty.</p><a class="btn" href="/collections/all" data-link>Start shopping</a></div>`}</div>`;
@@ -822,7 +830,7 @@ function checkout() {
     </form>
     <aside class="co-summary"><div id="paypal-buttons" style="min-height:50px"></div>${CONFIG.crypto ? `<button type="button" class="btn block crypto-btn" id="cryptoPay"><span>₿</span> Pay with crypto <small>BTC · ETH · USDT · 300+ coins</small></button>` : ""}
       <p class="co-fine">By placing your order, you agree to LeeysPremium's <a href="/pages/privacy" data-link>privacy notice</a> and <a href="/pages/terms" data-link>terms of service</a>.</p>
-      <h3>Order Summary</h3><div class="totals" id="totals"></div>
+      <h3>Order Summary</h3><div class="totals" id="totals"></div><div id="coSpin"></div>
       <p class="co-fine">🔁 30-day easy returns · 📦 Tracking on every order</p></aside></div></div>`;
   if (saved.country) $("#coCountry").value = saved.country;
   const renderItems = () => {
@@ -849,6 +857,7 @@ function checkout() {
       if (!V.manual && !V.autoDone) { V.autoDone = true; const best = bestVouchers(q); if (best.code !== V.code || best.shipCode !== V.shipCode) { Object.assign(V, best); return quote(); } }
       $("#vpickSel").innerHTML = [q.shipCode && `<span class="vtag ship">${esc(q.shipCode)}</span>`, q.code && `<span class="vtag">${esc(q.code)}</span>`].filter(Boolean).join(" ") || "Select or enter code ›";
       const n = bag.items.reduce((t, l) => t + l.qty, 0);
+      if ($("#coSpin")) $("#coSpin").innerHTML = spinProgress(Math.max(0, q.subtotal - (q.discount || 0)));
       $("#totals").innerHTML = `<div class="row-between"><span>Items (${n}):</span><span>${money(q.subtotal)}</span></div>
         ${q.discount ? `<div class="row-between"><span>Voucher (${esc(q.code)})</span><span>−${money(q.discount)}</span></div>` : ""}
         ${q.codeNote ? `<div class="muted" style="font-size:13px">🎟 ${esc(q.codeNote)}</div>` : ""}
@@ -914,9 +923,52 @@ function checkout() {
 function thankYou(params) {
   const n = esc(params.get("order") || "");
   if (params.get("crypto")) return cryptoWait(params.get("order") || "");
+  setTimeout(() => showSpinsFor({ order: params.get("order") || "" }, "#tySpins"), 900);
   setTimeout(async () => { try { const t = ((await api("/api/draw/mine", { device: deviceId() })).tickets || []).filter((x) => x.orderId === (params.get("order") || "")); const box = $("#tyEntries");
     if (box && t.length) box.innerHTML = `<div class="dz-tix" style="text-align:left;margin:14px 0"><b>🎟 Your order earned ${t.length} prize-draw entr${t.length > 1 ? "ies" : "y"}!</b>${t.map((x) => `<div class="dz-tk"><code>${esc(x.code)}</code><span>${esc(x.drawTitle)}</span></div>`).join("")}<a href="/#draw" data-link style="text-decoration:underline">See the prize draw ›</a></div>`; } catch {} }, 1200);
-  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><div id="tyEntries"></div><p class="muted">Once your items arrive, you can rate them from the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> or on each product's page.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
+  app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><div style="font-size:48px">✅</div><h1>Thank you for your order!</h1><p>Order <b>#${n}</b> is confirmed. Save this number — you can use it on the <a href="/track" data-link style="text-decoration:underline">tracking page</a> with your email. Tracking appears once your order ships (usually within 1–3 business days).</p><div id="tySpins"></div><div id="tyEntries"></div><p class="muted">Once your items arrive, you can rate them from the <a href="/track?order=${n}" data-link style="text-decoration:underline">order page</a> or on each product's page.</p><a class="btn" href="/collections/all" data-link>Continue shopping</a></div>`;
+}
+
+/* ---------- Spin & Win: $X+ orders unlock a spin, every spin wins ---------- */
+const SPINS = { promos: [], loaded: false };
+async function loadSpins(force) { if (SPINS.loaded && !force) return SPINS.promos; try { SPINS.promos = (await api("/api/spins")).promos || []; } catch { SPINS.promos = []; } SPINS.loaded = true; return SPINS.promos; }
+async function mySpins(q = {}) { try { return (await api("/api/spins/mine", { device: deviceId(), ...q })).spins || []; } catch { return []; } }
+async function renderSpinHome() {
+  const [ps, mine] = await Promise.all([loadSpins(), mySpins()]), slot = $("#spinSlot"); if (!slot || !ps.length) return;
+  const ready = mine.filter((x) => !x.prizeId);
+  slot.innerHTML = `<div class="wrap">${ps.map((p) => `<div class="spin-card"><div class="spin-copy"><span class="eyebrow">🎡 ${esc(p.title)}</span>
+      <h2>Spend <span class="dz-worth">${money(p.minSpend)}</span>, spin & win a free gift</h2><p>Every spin wins — one order of ${money(p.minSpend)} or more unlocks a spin, and your prize ships free with no extra cost. Ends ${new Date(p.endsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.</p>
+      ${ready.some((x) => x.promoId === p.id) ? `<button class="btn accent" data-spin-now="${esc(ready.find((x) => x.promoId === p.id).code)}">🎉 You have a spin waiting — spin now</button>` : `<a class="btn accent" href="/collections/all" data-link>Shop now</a>`}</div>
+    <div class="spin-prizes">${p.prizes.slice(0, 6).map((z) => `<a href="/products/${z.id}" data-link title="${esc(z.title)}">${z.image ? `<img src="${esc(z.image)}" alt="" loading="lazy">` : "<span>🎁</span>"}<small>${money(z.value)}</small></a>`).join("")}</div></div>`).join("")}</div>`;
+  slot.querySelectorAll("[data-spin-now]").forEach((b) => (b.onclick = () => spinModal(b.dataset.spinNow, ps.find((p) => p.id === mine.find((x) => x.code === b.dataset.spinNow)?.promoId))));
+}
+async function showSpinsFor(q, sel) {
+  const [ps, list] = await Promise.all([loadSpins(true), mySpins(q)]), box = $(sel); if (!box) return;
+  const these = list.filter((x) => x.order === (q.order || "").toUpperCase());
+  if (!these.length) return;
+  box.innerHTML = these.map((x) => x.prizeId ? `<div class="spin-done">🎁 Your free spin won <b>${esc((PRODUCTS.find((p) => p.id === x.prizeId) || {}).title || "a prize")}</b> — it ships free as order <b>#${esc(x.giftOrder || "")}</b>.</div>`
+    : `<div class="spin-ready"><div><b>🎉 Your order unlocked a free spin!</b><span>${esc(x.promo)} — every spin wins a free gift.</span></div><button class="btn accent" data-spin-now="${esc(x.code)}">Spin the wheel</button></div>`).join("");
+  box.querySelectorAll("[data-spin-now]").forEach((b) => (b.onclick = () => spinModal(b.dataset.spinNow, ps.find((p) => p.id === these.find((x) => x.code === b.dataset.spinNow)?.promoId), () => showSpinsFor(q, sel))));
+}
+function spinModal(code, promo, done) {
+  const prizes = promo?.prizes || [], m = document.createElement("div"); m.className = "offer-bg";
+  m.innerHTML = `<div class="offer dz-modal spin-modal"><button class="offer-x" aria-label="Close">✕</button><span class="offer-eb">${esc(promo?.title || "Spin & Win")}</span><h3>Every spin wins!</h3>
+    <div class="spin-wheel">${wheelSVG(prizes)}</div><div id="spRes"></div><button class="btn accent block" id="spGo">🎡 Spin</button></div>`;
+  document.body.appendChild(m);
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x")) { m.remove(); renderSpinHome(); done?.(); } };
+  $("#spGo", m).onclick = async () => {
+    const b = $("#spGo", m); b.disabled = true; b.textContent = "Spinning…";
+    let r; try { r = await api("/api/spins/" + encodeURIComponent(code), {}); } catch (e) { $("#spRes", m).innerHTML = `<div class="note err">${esc(e.message)}</div>`; b.remove(); return; }
+    const idx = Math.max(0, prizes.findIndex((p) => p.id === r.prizeId)), len = prizes.length || 1, n = len ? Math.max(6, Math.ceil(8 / len) * len) : 8;
+    const segs = [...Array(n).keys()].filter((i) => i % len === idx), j = segs[Math.floor(Math.random() * segs.length)] ?? 0;
+    const g = m.querySelector(".wheel-rot"); g.style.animation = "none"; g.getBoundingClientRect();
+    g.style.transition = "transform 4.6s cubic-bezier(.12,.75,.12,1)"; g.style.transform = `rotate(${360 * 6 - ((j + 0.5) * 360) / n}deg)`;
+    setTimeout(() => {
+      const z = prizes[idx] || { title: r.title || "your prize" };
+      $("#spRes", m).innerHTML = `<div class="spin-win">${z.image ? `<img src="${esc(z.image)}" alt="">` : ""}<div><b>You won ${esc(z.title.slice(0, 70))}!</b><span>${z.value ? `Worth ${money(z.value)} · ` : ""}Ships free to the address on your order. Gift order <b>#${esc(r.giftOrder || "")}</b> — track it like any order.</span></div></div>`;
+      b.textContent = "Done"; b.disabled = false; b.onclick = () => { m.remove(); renderSpinHome(); done?.(); }; confetti();
+    }, r.already ? 300 : 4700);
+  };
 }
 
 /* ---------- Prize draw: wheel, free one-tap entry, $1 voucher entry, tickets, results ---------- */
@@ -1204,6 +1256,7 @@ function track(params) {
             ${o.canReview && live && !l.gift ? (rv ? `<button class="btn sm ghost" data-rate-i="${i}">${starIcons(rv.rating)} Edit review</button>` : `<button class="btn sm accent" data-rate-i="${i}">★ Rate this product</button>`) : ""}<span>${money(l.price * l.qty)}</span></div>`; }).join("")}
         <div class="row-between" style="font-weight:700;padding-top:8px"><span>Total</span><span>${money(o.total)}</span></div></div>`;
       rememberOrder(o.id, f.email.value);
+      out.insertAdjacentHTML("afterbegin", `<div id="trSpins"></div>`); showSpinsFor({ order: o.id, email: f.email.value }, "#trSpins");
       out.querySelectorAll("[data-rate-i]").forEach((b) => (b.onclick = () => { const l = o.items[Number(b.dataset.rateI)], rv = (o.reviews || []).find((r) => r.product_id === l.id);
         reviewModal(PRODUCTS.find((x) => x.id === l.id), { order: o.id, email: f.email.value, rating: rv?.rating, body: rv?.body, done: () => f.requestSubmit() }); }));
     } catch (er) { out.innerHTML = `<p class="note err">${esc(er.message)}</p>`; }
@@ -1293,7 +1346,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
   $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 2).map(link).join("");
   $("#mobileNav").innerHTML = links + `<a href="/track" data-link>Track order</a>`;
   $("#footerCollections").innerHTML = links;
-  updateCount(); trk("visit"); route();
+  updateCount(); trk("visit"); route(); loadSpins().then((ps) => { if (ps.length && typeof refreshCartViews === "function") refreshCartViews(); });
 })();
 
 /* ---------- Installable app (PWA) ---------- */

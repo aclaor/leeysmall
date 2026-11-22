@@ -8,6 +8,7 @@ import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSettin
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
 import { cryptoReady, createCryptoInvoice, verifyIpn } from "./crypto-pay.js";
 import { publicDraw, currentDraw, runDueDraws, runDraw, vapidKeys, pushNotice, notifyDraw, turnstileOk, ipHash, ticketCode, eligibleCountry, newSeed, sha256, orderEntries } from "./draws.js";
+import { liveSpinPromos, grantSpins, useSpin } from "./spins.js";
 import { cjSearch, cjCategories, cjProduct, cjPageVideo, cjToRecord, cjStock, cjCreateOrder, cjOrderDetail } from "./cj.js";
 
 /* ---------------- helpers ---------------- */
@@ -186,9 +187,10 @@ const TRACK_KINDS = new Set(["visit", "product", "category", "search", "cart", "
 async function afterPaid(env, ctx, o) {
   for (const c of [o.discount_code, o.ship_code].filter(Boolean)) await env.DB.prepare("UPDATE discounts SET uses=uses+1 WHERE code=?").bind(c).run();
   const items = parse(o.items, []);
-  await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.gift ? 0 : l.qty, l.id)));
+  if (items.length) await env.DB.batch(items.map((l) => env.DB.prepare("UPDATE products SET stock=MAX(0, stock-?), sold=COALESCE(sold,0)+? WHERE id=?").bind(l.qty, l.gift ? 0 : l.qty, l.id)));
   ctx.waitUntil(fulfil(env, o.id).catch(() => {}));
   try { await orderEntries(env, o); } catch (e) { console.error("order entries", e); }
+  try { if (o.pay_method !== "spin") await grantSpins(env, o); } catch (e) { console.error("spins", e); }
 }
 const REVIEWABLE = new Set(["paid", "processing", "action_needed", "shipped", "delivered"]);
 async function refreshRating(env, pid) {
@@ -298,6 +300,19 @@ async function handleRoutes(req, env, ctx) {
     await env.DB.prepare("UPDATE tickets SET claim=? WHERE code=? AND claim IS NULL").bind(JSON.stringify(claim), code).run();
     return json({ ok: true });
   }
+  /* ---------- Spin & Win (public) ---------- */
+  if (path === "/api/spins" && m === "GET") return json({ promos: await liveSpinPromos(env) });
+  if (path === "/api/spins/mine" && m === "POST") { // spins on this device, or for an order (order number + email)
+    const b = await body(req), dev = str(b.device, 64), oid = str(b.order, 30).toUpperCase().replace(/^#/, ""), email = str(b.email, 200).toLowerCase().trim();
+    const rows = (await env.DB.prepare(`SELECT s.code, s.order_id, s.prize_id, s.gift_order_id, s.promo_id, p.title FROM spins s JOIN spin_promos p ON p.id=s.promo_id
+      WHERE (s.device=? AND s.device IS NOT NULL) OR (s.order_id=? AND s.email=?) ORDER BY s.created_at DESC LIMIT 50`).bind(dev || "-", oid || "-", email || "-").all()).results;
+    return json({ spins: rows.map((r) => ({ code: r.code, order: r.order_id, promoId: r.promo_id, promo: r.title, prizeId: r.prize_id === "…" ? null : r.prize_id, giftOrder: r.gift_order_id })) });
+  }
+  if ((p = path.match(/^\/api\/spins\/(SPIN-[A-Z0-9]{8})$/)) && m === "POST") {
+    try { const r = await useSpin(env, p[1], newOrderId); if (r.giftOrder && !r.already) ctx.waitUntil(fulfil(env, r.giftOrder).catch(() => {})); return json(r); }
+    catch (e) { return bad(e.message, e.status || 500); }
+  }
+
   if (path === "/api/push/subscribe" && m === "POST") {
     const b = await body(req), dev = str(b.device, 64), sub = b.sub || {};
     if (!/^[\w-]{16,64}$/.test(dev) || !/^https:\/\//.test(sub.endpoint || "")) return bad("Invalid subscription");
@@ -672,6 +687,38 @@ async function admin(req, env, ctx, path, m, url) {
     const rows = (await env.DB.prepare("SELECT code, kind, country, day, result, prize_id, voucher_code, consolation_code, claim, created_at FROM tickets WHERE draw_id=? AND status='active' ORDER BY (result='won') DESC, created_at DESC LIMIT 500").bind(p[1]).all()).results;
     const byCountry = (await env.DB.prepare("SELECT country, COUNT(*) n FROM tickets WHERE draw_id=? AND status='active' GROUP BY country ORDER BY n DESC").bind(p[1]).all()).results;
     return json({ tickets: rows.map((r) => ({ ...r, claim: parse(r.claim, null) })), byCountry });
+  }
+  /* ---------- Spin & Win (admin) ---------- */
+  if (path === "/api/admin/spins" && m === "GET") {
+    const promos = (await env.DB.prepare(`SELECT p.*, (SELECT COUNT(*) FROM spins s WHERE s.promo_id=p.id) granted, (SELECT COUNT(*) FROM spins s WHERE s.promo_id=p.id AND s.gift_order_id IS NOT NULL) used
+      FROM spin_promos p ORDER BY p.id DESC LIMIT 50`).all()).results;
+    return json({ promos: promos.map((p) => ({ ...p, prizes: parse(p.prizes, []) })) });
+  }
+  if (path === "/api/admin/spins" && m === "POST") {
+    const b = await body(req), id = Number(b.id) || 0;
+    const prizes = (Array.isArray(b.prizes) ? b.prizes : []).slice(0, 8).map((x) => ({ id: str(x.id, 120), weight: Math.max(0, Math.min(1000, Number(x.weight) || 0)), qty: Math.max(0, Math.round(Number(x.qty) || 0)), given: Math.max(0, Number(x.given) || 0) })).filter((x) => x.id);
+    if (!prizes.length) return bad("Add at least one prize.");
+    if (!prizes.some((x) => x.weight > 0)) return bad("Give at least one prize a chance above 0.");
+    const st = new Date(b.startsAt), en = new Date(b.endsAt);
+    if (isNaN(st) || isNaN(en) || en <= st) return bad("Choose a start and an end date (the end after the start).");
+    const f = { title: str(b.title, 120) || "Spend & Spin", min_spend: Math.max(1, Number(b.minSpend) || 200), prizes: JSON.stringify(prizes), starts_at: st.toISOString(), ends_at: en.toISOString(),
+      countries: (str(b.countries, 400).toUpperCase().replace(/[^A-Z,\s]/g, "").split(/[\s,]+/).filter(Boolean).join(",")) || "ALL" };
+    if (id) {
+      const cur = await env.DB.prepare("SELECT prizes FROM spin_promos WHERE id=?").bind(id).first(); if (!cur) return bad("Not found", 404);
+      const old = parse(cur.prizes, []); prizes.forEach((x) => { const o = old.find((y) => y.id === x.id); x.given = o ? o.given || 0 : 0; }); f.prizes = JSON.stringify(prizes);
+      await env.DB.prepare(`UPDATE spin_promos SET ${Object.keys(f).map((k) => k + "=?").join(",")} WHERE id=?`).bind(...Object.values(f), id).run();
+      return json({ ok: true, id });
+    }
+    const r = await env.DB.prepare(`INSERT INTO spin_promos (${Object.keys(f).join(",")}) VALUES (${Object.keys(f).map(() => "?").join(",")})`).bind(...Object.values(f)).run();
+    return json({ ok: true, id: r.meta.last_row_id });
+  }
+  if ((p = path.match(/^\/api\/admin\/spins\/(\d+)\/(publish|unpublish|cancel)$/)) && m === "POST") {
+    const st = { publish: "live", unpublish: "draft", cancel: "cancelled" }[p[2]];
+    await env.DB.prepare("UPDATE spin_promos SET status=? WHERE id=?").bind(st, p[1]).run(); await bustCache(env);
+    return json({ ok: true });
+  }
+  if ((p = path.match(/^\/api\/admin\/spins\/(\d+)\/list$/)) && m === "GET") {
+    return json({ spins: (await env.DB.prepare(`SELECT s.*, o.total order_total, o.name FROM spins s LEFT JOIN orders o ON o.id=s.order_id WHERE s.promo_id=? ORDER BY s.created_at DESC LIMIT 500`).bind(p[1]).all()).results });
   }
   if (path === "/api/admin/turnstile" && m === "PUT") { await setSetting(env, "turnstile_site", str((await body(req)).site, 100)); return json({ ok: true }); }
   if (path === "/api/admin/reviews" && m === "GET") {

@@ -49,6 +49,11 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_tickets_device ON tickets(device, draw_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tickets_pp ON tickets(paypal_order_id)`,
   `CREATE TABLE IF NOT EXISTS push_subs (device TEXT PRIMARY KEY, endpoint TEXT UNIQUE, sub TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS spin_promos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, min_spend REAL DEFAULT 200, prizes TEXT NOT NULL DEFAULT '[]',
+    starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, countries TEXT DEFAULT 'ALL', status TEXT DEFAULT 'draft', created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS spins (code TEXT PRIMARY KEY, promo_id INTEGER NOT NULL, order_id TEXT NOT NULL, email TEXT, device TEXT, prize_id TEXT, gift_order_id TEXT,
+    used_at TEXT, created_at TEXT DEFAULT (datetime('now')), UNIQUE(promo_id, order_id))`,
+  `CREATE INDEX IF NOT EXISTS idx_spins_device ON spins(device)`,
   `CREATE TABLE IF NOT EXISTS stats (day TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, n INTEGER DEFAULT 0, PRIMARY KEY (day, kind, target))`,
 ];
 

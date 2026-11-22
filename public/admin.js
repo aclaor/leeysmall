@@ -32,7 +32,7 @@ function login() {
 
 async function shell() {
   root.innerHTML = `<div class="adm"><nav class="side"><div class="logo">Leeys<span>Premium</span></div>
-    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["reviews", "Reviews"], ["draws", "Prize Draw"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
+    ${[["dashboard", "Dashboard"], ["insights", "Insights"], ["orders", "Orders"], ["reviews", "Reviews"], ["draws", "Prize Draw"], ["spinwin", "Spin & Win"], ["messages", "Messages"], ["products", "Products"], ["import", "Import from CJ"], ["live", "Live & Video"], ["promos", "Promotions"], ["discounts", "Vouchers"], ["subscribers", "Subscribers"], ["setup", "Setup"]]
       .map(([k, t]) => `<a href="#${k}" data-tab="${k}">${t}<span id="badge-${k}"></span></a>`).join("")}
     <div class="bottom"><a href="/" target="_blank">View store ↗</a><a href="#" id="logout">Sign out</a></div></nav><main class="main" id="main"></main></div>`;
   $("#logout").onclick = async (e) => { e.preventDefault(); await fetch("/api/admin/logout"); login(); };
@@ -45,9 +45,74 @@ window.addEventListener("hashchange", () => { const t = location.hash.slice(1); 
 function show(t) {
   tab = t;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  ({ dashboard, insights, orders, reviews, draws, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
+  ({ dashboard, insights, orders, reviews, draws, spinwin, messages, products, import: importCj, live: liveAdmin, promos, discounts, subscribers, setup }[t] || dashboard)().catch((e) => toast(e.message));
 }
 const main = () => $("#main");
+
+/* ---------- Spin & Win: $X+ orders unlock a spin; every spin wins ---------- */
+async function spinwin(editId) {
+  const [r, prods] = await Promise.all([api("/api/admin/spins"), api("/api/admin/products")]);
+  const edit = editId === "new" ? null : r.promos.find((x) => x.id === editId) || null, showForm = editId != null;
+  const local = (iso) => { const d = new Date(iso), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const P = (id) => prods.find((x) => x.id === id);
+  const now = Date.now(), state = (x) => x.status === "live" ? (new Date(x.ends_at) <= now ? ["Ended", "opacity:.7"] : new Date(x.starts_at) > now ? ["Scheduled", "background:rgba(47,140,255,.15);color:#6fb3ff"] : ["Live", "background:rgba(73,215,154,.15);color:#49d79a"]) : x.status === "cancelled" ? ["Cancelled", "opacity:.6"] : ["Draft", ""];
+  const prizes = edit ? edit.prizes.map((x) => ({ ...x })) : [];
+  const f = edit || { title: "Spend $200, Spin & Win", min_spend: 200, starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 14 * 864e5).toISOString(), countries: "ALL" };
+  main().innerHTML = `<div class="row-between" style="flex-wrap:wrap;gap:10px"><h1 style="margin:0">Spin & Win</h1>${showForm ? "" : `<button class="btn" id="swNew">+ New Spin & Win</button>`}</div>
+    <p class="muted" style="margin:6px 0 16px">One paid order of at least your minimum (product total after discounts, before shipping) unlocks a spin. <b>Every spin wins</b> one of your prizes, which is created as a free order to the same address and sent to your supplier like any order. Shoppers see an "Add $X more to unlock a free spin" bar in their cart. You can publish several at once. Tip: keep prize values close to each other so every spin feels like a win.</p>
+    ${showForm ? `<div class="panel"><b>${edit ? "Edit" : "New"} Spin & Win</b><form id="swForm" class="form-grid" style="margin-top:12px">
+        <label style="grid-column:1/-1">Title<input class="inp" name="title" value="${esc(f.title)}" maxlength="120"></label>
+        <label>Minimum order ($)<input class="inp" type="number" min="1" step="1" name="minSpend" value="${f.min_spend}"></label>
+        <label>Countries (codes or ALL)<input class="inp" name="countries" value="${esc(f.countries)}"></label>
+        <label>Starts (your time)<input class="inp" type="datetime-local" name="startsAt" value="${local(f.starts_at)}"></label>
+        <label>Ends (your time)<input class="inp" type="datetime-local" name="endsAt" value="${local(f.ends_at)}"></label>
+        <div style="grid-column:1/-1"><div class="row-between"><b style="font-size:14px">Prizes (up to 8)</b><button type="button" class="btn sm ghost" id="swPick">Choose products…</button></div>
+          <p class="muted" style="font-size:12px;margin:4px 0 8px">Chance = how likely each prize is (higher = more often). Quantity = how many you'll give away (0 = no limit); when one runs out, the others are picked instead.</p><div id="swPrizes"></div></div>
+        <div style="grid-column:1/-1" class="flex"><button class="btn">Save</button><button type="button" class="btn ghost" id="swBack">Back</button></div></form></div>`
+    : r.promos.length ? r.promos.map((x) => { const [lab, sty] = state(x); return `<div class="panel"><div class="row-between" style="flex-wrap:wrap;gap:8px"><div><b style="font-size:17px">${esc(x.title)}</b> <span class="badge" style="${sty}">${lab}</span>
+        <div class="muted" style="font-size:13px;margin-top:4px">Orders of ${money(x.min_spend)}+ · ${new Date(x.starts_at).toLocaleString()} → ${new Date(x.ends_at).toLocaleString()} · ${esc(x.countries)} · ${x.granted} spins unlocked, ${x.used} used</div></div>
+        <div class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm ghost" data-sw-edit="${x.id}">Edit</button>${x.status === "live" ? `<button class="btn sm ghost" data-sw-act="unpublish" data-id="${x.id}">Unpublish</button>` : `<button class="btn sm" data-sw-act="publish" data-id="${x.id}">Publish</button>`}
+          <button class="btn sm ghost" data-sw-list="${x.id}">Spins</button>${x.status !== "cancelled" ? `<button class="btn sm ghost" data-sw-act="cancel" data-id="${x.id}">Cancel</button>` : ""}</div></div>
+        <div style="margin-top:10px;font-size:14px;display:grid;gap:4px">${x.prizes.map((z) => { const tw = x.prizes.reduce((t, y) => t + y.weight, 0) || 1; return `<div>🎁 ${esc(P(z.id)?.title?.slice(0, 60) || z.id)} · <span class="muted">${Math.round((z.weight / tw) * 100)}% chance · ${z.qty ? `${z.given || 0}/${z.qty} given` : `${z.given || 0} given`}</span></div>`; }).join("")}</div><div id="swL${x.id}"></div></div>`; }).join("")
+    : `<div class="panel"><p class="muted">No Spin & Win yet. Create one, choose your prizes and the minimum order, then publish it.</p></div>`}`;
+  $("#swNew") && ($("#swNew").onclick = () => spinwin("new"));
+  main().querySelectorAll("[data-sw-edit]").forEach((b) => (b.onclick = () => spinwin(Number(b.dataset.swEdit))));
+  main().querySelectorAll("[data-sw-act]").forEach((b) => (b.onclick = async () => {
+    const a = b.dataset.swAct; if (a === "cancel" && !confirm("Cancel this Spin & Win? Unused spins will stop working.")) return;
+    try { await api(`/api/admin/spins/${b.dataset.id}/${a}`, "POST", {}); toast({ publish: "Published 🎡", unpublish: "Unpublished", cancel: "Cancelled" }[a]); spinwin(); } catch (e) { toast(e.message); }
+  }));
+  main().querySelectorAll("[data-sw-list]").forEach((b) => (b.onclick = async () => {
+    const box = $("#swL" + b.dataset.swList); if (box.innerHTML) { box.innerHTML = ""; return; }
+    const l = (await api(`/api/admin/spins/${b.dataset.swList}/list`)).spins;
+    box.innerHTML = l.length ? `<div class="tbl-wrap" style="margin-top:10px"><table><tr><th>Spin</th><th>Order</th><th>Customer</th><th>Prize</th><th>Free order</th><th>Date</th></tr>${l.map((x) => `<tr><td><code>${esc(x.code)}</code></td><td>#${esc(x.order_id)} · ${money(x.order_total || 0)}</td><td>${esc(x.name || x.email || "")}</td>
+      <td>${x.prize_id && x.prize_id !== "…" ? esc(P(x.prize_id)?.title?.slice(0, 40) || x.prize_id) : `<span class="muted">Not spun yet</span>`}</td><td>${x.gift_order_id ? "#" + esc(x.gift_order_id) : ""}</td><td>${esc((x.used_at || x.created_at).slice(0, 16))}</td></tr>`).join("")}</table></div>` : `<p class="muted" style="margin-top:10px">No spins unlocked yet.</p>`;
+  }));
+  if (!showForm) return;
+  const drawP = () => {
+    const tw = prizes.reduce((t, z) => t + (Number(z.weight) || 0), 0) || 1;
+    $("#swPrizes").innerHTML = prizes.length ? `<div class="tbl-wrap"><table><tr><th>Prize</th><th>Worth</th><th>Chance</th><th>Quantity</th><th></th></tr>${prizes.map((z, i) => `<tr><td><div class="flex" style="gap:8px">${P(z.id) ? thumb(P(z.id)) : ""}<span style="font-size:13px">${esc(P(z.id)?.title?.slice(0, 50) || z.id)}</span></div></td><td>${P(z.id) ? money(P(z.id).price) : ""}</td>
+      <td><input class="inp" type="number" min="0" max="1000" value="${z.weight}" data-w="${i}" style="width:80px"> <span class="muted" style="font-size:12px">${Math.round(((Number(z.weight) || 0) / tw) * 100)}%</span></td><td><input class="inp" type="number" min="0" value="${z.qty || 0}" data-qn="${i}" style="width:80px">${z.given ? ` <span class="muted" style="font-size:12px">${z.given} given</span>` : ""}</td><td><button type="button" class="btn sm ghost" data-rmz="${i}">Remove</button></td></tr>`).join("")}</table></div>` : `<span class="muted">No prizes yet</span>`;
+    main().querySelectorAll("[data-w]").forEach((x) => (x.onchange = () => { prizes[x.dataset.w].weight = Number(x.value) || 0; drawP(); }));
+    main().querySelectorAll("[data-qn]").forEach((x) => (x.onchange = () => { prizes[x.dataset.qn].qty = Number(x.value) || 0; }));
+    main().querySelectorAll("[data-rmz]").forEach((x) => (x.onclick = () => { prizes.splice(Number(x.dataset.rmz), 1); drawP(); }));
+  };
+  drawP();
+  $("#swBack").onclick = () => spinwin();
+  $("#swPick").onclick = () => {
+    const m = document.createElement("div"); m.className = "modal-bg";
+    m.innerHTML = `<div class="modal" style="max-width:640px"><h3 style="margin-top:0">Choose up to 8 prizes</h3><input class="inp" id="pq" placeholder="Search products…" style="width:100%"><div id="pl" style="max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px"></div><div class="flex" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="pd">Done</button></div></div>`;
+    document.body.appendChild(m);
+    const dr = () => { const q = $("#pq", m).value.toLowerCase().trim();
+      $("#pl", m).innerHTML = prods.filter((p) => p.active && (!q || p.title.toLowerCase().includes(q))).slice(0, 60).map((p) => `<label class="flex" style="gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer"><input type="checkbox" data-pp="${p.id}" ${prizes.some((z) => z.id === p.id) ? "checked" : ""}>${thumb(p)}<span style="flex:1;font-size:13px">${esc(p.title.slice(0, 70))}</span><span class="muted" style="font-size:12px">${money(p.price)}</span></label>`).join("");
+      $("#pl", m).querySelectorAll("[data-pp]").forEach((c) => (c.onchange = () => { const i = prizes.findIndex((z) => z.id === c.dataset.pp); if (c.checked) { if (prizes.length >= 8) { c.checked = false; return toast("Up to 8 prizes"); } prizes.push({ id: c.dataset.pp, weight: 10, qty: 0 }); } else if (i >= 0) prizes.splice(i, 1); })); };
+    $("#pq", m).oninput = dr; $("#pd", m).onclick = () => { m.remove(); drawP(); }; m.onclick = (e) => { if (e.target === m) { m.remove(); drawP(); } }; dr();
+  };
+  $("#swForm").onsubmit = async (e) => {
+    e.preventDefault(); const F = e.target;
+    try { await api("/api/admin/spins", "POST", { id: edit?.id, title: F.title.value, minSpend: F.minSpend.value, countries: F.countries.value, startsAt: new Date(F.startsAt.value).toISOString(), endsAt: new Date(F.endsAt.value).toISOString(), prizes });
+      toast(edit ? "Saved" : "Created — publish it when ready"); spinwin(); } catch (er) { toast(er.message); }
+  };
+}
 
 /* ---------- Prize draw (sweepstakes) ---------- */
 async function draws(editId) {

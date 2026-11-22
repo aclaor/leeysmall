@@ -984,3 +984,25 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .dz-shop { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 14px; border: 1px solid rgba(73,215,154,.35); background: rgba(73,215,154,.08); color: var(--ink-2); font-size: 20px; }
 .dz-shop span { display: grid; flex: 1; font-size: 14px; } .dz-shop b { color: #fff; } .dz-shop small { font-size: 12px; color: var(--muted); }
 .dz-shop i { font-style: normal; font-size: 13px; font-weight: 700; color: #49d79a; white-space: nowrap; } .dz-shop:hover { border-color: #49d79a; }
+
+/* ---------- Spin & Win ---------- */
+.spin-progress { margin: 0 18px 10px; padding: 10px 12px; border-radius: 12px; font-size: 13px; color: var(--ink-2); background: rgba(139,61,255,.12); border: 1px solid rgba(139,61,255,.4); }
+.spin-progress b { color: #fff; } .spin-progress .bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,.08); margin-top: 8px; overflow: hidden; }
+.spin-progress .bar i { display: block; height: 100%; background: linear-gradient(90deg, #8b3dff, #ff3d6e); border-radius: 999px; }
+.spin-progress.done { background: rgba(73,215,154,.1); border-color: rgba(73,215,154,.45); }
+.co-summary .spin-progress, .cart-page .spin-progress { margin: 12px 0 0; }
+.spin-home { padding: 10px 0; } .spin-home:empty { display: none; }
+.spin-card { display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; align-items: center; padding: 24px 28px; margin-bottom: 14px; border-radius: 20px; border: 1px solid rgba(139,61,255,.45);
+  background: radial-gradient(600px 300px at 100% 0%, rgba(255,61,110,.22), transparent 60%), radial-gradient(500px 300px at 0% 100%, rgba(139,61,255,.25), transparent 60%), rgba(10,16,34,.7); }
+.spin-copy h2 { margin: 8px 0; font-size: clamp(24px, 3vw, 34px); color: #fff; } .spin-copy p { color: var(--ink-2); margin: 0 0 16px; }
+.spin-prizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.spin-prizes a { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: #fff; display: grid; place-items: center; font-size: 34px; box-shadow: 0 8px 20px rgba(0,0,0,.35); transition: transform .2s; }
+.spin-prizes a:hover { transform: translateY(-3px) rotate(-1deg); } .spin-prizes img { width: 100%; height: 100%; object-fit: cover; }
+.spin-prizes small { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.7); color: #ffd23f; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+.spin-ready { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; text-align: left; margin: 14px 0; padding: 14px 16px; border-radius: 14px; background: linear-gradient(135deg, rgba(139,61,255,.22), rgba(255,61,110,.16)); border: 1px solid rgba(255,61,110,.45); }
+.spin-ready div { display: grid; gap: 2px; } .spin-ready b { color: #fff; } .spin-ready span { color: var(--ink-2); font-size: 13px; }
+.spin-done { margin: 14px 0; padding: 12px 14px; border-radius: 12px; background: rgba(73,215,154,.1); border: 1px solid rgba(73,215,154,.4); color: var(--ink-2); text-align: left; } .spin-done b { color: #fff; }
+.spin-modal { width: min(440px, 100%); } .spin-wheel { display: grid; justify-items: center; margin: 6px 0; } .spin-wheel .wheel-wrap { width: min(320px, 76vw); }
+.spin-win { display: flex; gap: 12px; align-items: center; text-align: left; padding: 12px; border-radius: 14px; background: rgba(255,210,63,.12); border: 1px solid rgba(255,210,63,.45); margin-bottom: 6px; }
+.spin-win img { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: #fff; flex: none; } .spin-win div { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); } .spin-win b { color: #fff; font-size: 15px; }
+@media (max-width: 800px) { .spin-card { grid-template-columns: 1fr; padding: 20px 16px; } }
