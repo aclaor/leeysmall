@@ -973,3 +973,11 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .crypto-btn { margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; background: linear-gradient(135deg, #f7931a, #c46a00); color: #fff; border: 0; min-height: 48px; border-radius: 999px; font-weight: 700; }
 .crypto-btn span { font-size: 20px; } .crypto-btn small { width: 100%; font-weight: 500; font-size: 11px; opacity: .9; margin-top: -6px; }
 .crypto-btn:hover { filter: brightness(1.08); } .crypto-btn:disabled { opacity: .7; }
+.pe-img { width: 92px; height: 92px; object-fit: cover; border-radius: 16px; background: #fff; justify-self: center; box-shadow: 0 10px 26px rgba(0,0,0,.45), 0 0 0 3px rgba(255,210,63,.5); }
+.pe-h { font-size: 22px !important; line-height: 1.25; } .pe-h b { color: #ffd23f; }
+.pe-list { list-style: none; padding: 0; margin: 6px 0 4px; display: grid; gap: 8px; text-align: left; font-size: 14px; color: var(--ink-2); }
+.pe-list li { padding-left: 26px; position: relative; } .pe-list li::before { content: "✓"; position: absolute; left: 4px; color: #49d79a; font-weight: 800; }
+.pe-list b { color: #fff; }
+.dz-worth { color: #ffd23f; text-shadow: 0 0 24px rgba(255,210,63,.35); }
+.dz-pitch { margin: -4px 0 2px; color: var(--ink-2); font-size: 15px; line-height: 1.5; } .dz-pitch b { color: #fff; }
+.dz-pay { flex-direction: column; gap: 0; line-height: 1.2; } .dz-pay small { font-size: 11px; font-weight: 500; color: #49d79a; margin-top: 2px; }

@@ -968,14 +968,17 @@ function renderDraw() {
     body = `<div class="dz-cd">${open ? `Draw in <span id="dzCd">${countdown(d.drawAt)}</span>` : "Drawing winners…"}<small>${fmtWhen(d.drawAt)}</small></div>
       ${d.progress != null ? `<div class="dz-prog"><div class="row-between"><span>Prize goal</span><b>${d.progress}%</b></div><i><b style="width:${d.progress}%"></b></i></div>` : ""}
       <div class="muted dz-n">${d.entries.toLocaleString()} entr${d.entries === 1 ? "y" : "ies"} so far</div>
-      ${d.eligible ? `<div class="dz-btns"><button class="btn accent" id="dzFree" ${open ? "" : "disabled"}>🎟 Enter free</button><button class="btn ghost" id="dzPay" ${open ? "" : "disabled"}>Get ${money(d.entryPrice)} ${vName} + entry</button></div>`
+      ${d.eligible ? `<div class="dz-btns"><button class="btn accent" id="dzFree" ${open ? "" : "disabled"}>🎟 Enter free</button><button class="btn ghost dz-pay" id="dzPay" ${open ? "" : "disabled"}>🎟 ${money(d.entryPrice)} voucher + entry<small>Voucher is yours to keep</small></button></div>`
         : `<div class="note">Sorry — this draw isn't open in your country (${esc(d.country || "unknown")}).</div>`}
       <p class="dz-fine"><b>No purchase necessary.</b> Free and voucher entries have equal odds of winning. ${d.freePerDay === 1 ? "One free entry" : d.freePerDay + " free entries"} per day per device. Open to: ${esc(d.countries === "ALL" ? "all countries where permitted" : d.countries.split(",").join(", "))}. <a href="/draw-rules" data-link>Official rules</a>${d.permit ? ` · ${esc(d.permit)}` : ""}</p>`;
   }
   const tickets = mine.length ? `<div class="dz-tix"><div class="row-between"><b>Your tickets (${mine.length})</b>${d.notify && DRAW.vapid && "PushManager" in window && !drawn && (window.Notification?.permission !== "granted") ? `<button class="btn sm ghost" id="dzBell">🔔 Notify me of the result</button>` : ""}</div>
     ${mine.slice(0, 6).map((t) => `<div class="dz-tk"><code>${esc(t.code)}</code><span>${t.kind === "paid" ? `with ${vName}${t.voucher ? ` <code>${esc(t.voucher)}</code>` : ""}` : "free entry"}</span><button class="dz-copy" data-copy="${esc(t.code)}" title="Copy">⧉</button></div>`).join("")}
     ${mine.length > 6 ? `<small class="muted">+${mine.length - 6} more</small>` : ""}<small class="muted">Tickets are saved in this browser. Keep a copy of your ticket number in case you switch devices.</small></div>` : "";
-  slot.innerHTML = `<div class="az-spot-copy dz"><span class="eyebrow">🎡 LeeysPremium prize draw</span><h2>${esc(d.title)}</h2><div class="dz-prizes">${prizes}</div>${body}${tickets}</div>
+  const top = [...d.prizes].sort((a, b) => b.value - a.value)[0], worth = d.prizes.reduce((t, p) => t + p.value, 0);
+  const headline = drawn ? esc(d.title) : d.prizes.length > 1 ? `Win prizes worth <span class="dz-worth">${money(worth)}</span>` : `Win a <span class="dz-worth">${money(top?.value || 0)}</span> prize`;
+  const pitch = drawn ? "" : `<p class="dz-pitch">Enter free in one tap — or grab a <b>${money(d.entryPrice)} ${vName}</b> that's <b>yours to keep, win or not</b>, with an entry included.</p>`;
+  slot.innerHTML = `<div class="az-spot-copy dz"><span class="eyebrow">🎡 ${drawn ? "LeeysPremium prize draw" : esc(d.title)}</span><h2>${headline}</h2>${pitch}<div class="dz-prizes">${prizes}</div>${body}${tickets}</div>
     <div class="dz-wheel">${wheelSVG(d.prizes)}${drawn && !sessionStorage.getItem("lp_spun_" + d.id) ? `<button class="btn accent dz-spin" id="dzSpin">Spin to reveal the winners</button>` : ""}</div>`;
   if (open && $("#dzCd")) DRAW.timer = setInterval(() => { const c = $("#dzCd"); if (!c) return clearInterval(DRAW.timer); if (new Date(d.drawAt) <= Date.now()) { clearInterval(DRAW.timer); setTimeout(loadDraw, 4000); } c.innerHTML = countdown(d.drawAt); }, 1000);
   $("#dzFree") && ($("#dzFree").onclick = freeEntry);
@@ -1023,15 +1026,21 @@ async function freeEntry() {
 }
 function payEntry() {
   const d = DRAW.d, vName = d.voucherType === "shipping" ? "shipping voucher" : "store voucher", m = document.createElement("div"); m.className = "offer-bg";
-  m.innerHTML = `<div class="offer dz-modal"><button class="offer-x" aria-label="Close">✕</button><h3>${money(d.entryPrice)} ${vName} + entry</h3>
-    <p>Each ${money(d.entryPrice)} buys a ${vName} you can use on any future order (valid 180 days) and includes one entry in the draw.</p>
-    <div class="dz-qty"><button data-q="-1">−</button><span id="pq">1</span><button data-q="1">+</button></div><div class="muted" id="pTot" style="margin:-4px 0 10px">Total ${money(d.entryPrice)}</div>
-    <div id="dzPP"></div><div id="peErr" class="note err" hidden></div><p class="dz-fine">No purchase necessary to enter — <a href="#" id="peFree">enter free instead</a>. Free and paid entries have equal odds.</p></div>`;
+  const top = [...d.prizes].sort((a, b) => b.value - a.value)[0], total = d.prizes.reduce((t, p) => t + p.value, 0);
+  m.innerHTML = `<div class="offer dz-modal"><button class="offer-x" aria-label="Close">✕</button>
+    ${top?.image ? `<img class="pe-img" src="${esc(top.image)}" alt="">` : `<div class="offer-burst">🎁</div>`}
+    <span class="offer-eb">Get a ${money(d.entryPrice)} ${vName}</span>
+    <h3 class="pe-h">…and a chance to win ${d.prizes.length > 1 ? `prizes worth <b>${money(total)}</b>` : `a <b>${money(top?.value || 0)}</b> prize`}</h3>
+    <ul class="pe-list"><li><b>Your ${money(d.entryPrice)} ${vName} is yours to keep</b> — win or not. Use it on any order within 180 days.</li>
+      <li>Each voucher includes <b>1 entry</b> to win ${top ? esc(top.title.slice(0, 48)) + (d.prizes.length > 1 ? ` + ${d.prizes.length - 1} more prize${d.prizes.length > 2 ? "s" : ""}` : "") : "the prize"}.</li>
+      <li>Winners drawn ${fmtWhen(d.drawAt)}.</li></ul>
+    <div class="dz-qty"><button data-q="-1">−</button><span id="pq">1</span><button data-q="1">+</button></div><div class="muted" id="pTot" style="margin:-4px 0 10px">${money(d.entryPrice)} · 1 voucher + 1 entry</div>
+    <div id="dzPP"></div><div id="peErr" class="note err" hidden></div><p class="dz-fine">No purchase necessary — <a href="#" id="peFree">enter free instead</a>. Free and voucher entries have equal odds. <a href="/draw-rules" data-link>Rules</a></p></div>`;
   document.body.appendChild(m);
   let q = 1; const close = () => m.remove();
-  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x")) close(); };
+  m.onclick = (e) => { if (e.target === m || e.target.closest(".offer-x,[data-link]")) close(); };
   $("#peFree", m).onclick = (e) => { e.preventDefault(); close(); freeEntry(); };
-  m.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => { q = Math.min(5, Math.max(1, q + Number(b.dataset.q))); $("#pq", m).textContent = q; $("#pTot", m).textContent = "Total " + money(d.entryPrice * q); }));
+  m.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => { q = Math.min(5, Math.max(1, q + Number(b.dataset.q))); $("#pq", m).textContent = q; $("#pTot", m).textContent = `${money(d.entryPrice * q)} · ${q} voucher${q > 1 ? "s" : ""} + ${q} entr${q > 1 ? "ies" : "y"}`; }));
   const err = (t) => { $("#peErr", m).textContent = t; $("#peErr", m).hidden = false; };
   loadPaypal().then(() => window.paypal.Buttons({
     style: { layout: "vertical", shape: "pill", height: 44 },
@@ -1252,9 +1261,10 @@ document.addEventListener("click", (e) => {
   const add = e.target.closest("[data-add]");
   if (add) { const p = PRODUCTS.find((x) => x.id === add.dataset.add); cart.add(p.id, p.variants.map((v) => v.options[0]).join(" / ")); openDrawer(); return; }
   const q = e.target.closest("[data-q]");
-  if (q) { const l = cart.items.find((x) => x.key === q.dataset.q); cart.set(q.dataset.q, l.qty + Number(q.dataset.d)); refreshCartViews(); return; }
+  const ql = q && cart.items.find((x) => x.key === q.dataset.q); // only real cart lines (other widgets also use data-q)
+  if (ql) { cart.set(q.dataset.q, ql.qty + Number(q.dataset.d)); refreshCartViews(); return; }
   const rm = e.target.closest("[data-rm]");
-  if (rm) { cart.set(rm.dataset.rm, 0); refreshCartViews(); return; }
+  if (rm && cart.items.some((x) => x.key === rm.dataset.rm)) { cart.set(rm.dataset.rm, 0); refreshCartViews(); return; }
   if (e.target.closest("[data-close]") || e.target.id === "overlay") closeAll();
 });
 function refreshCartViews() { if (!$("#drawer").hidden) renderDrawer(); if (location.pathname === "/cart") cartPage(); }
