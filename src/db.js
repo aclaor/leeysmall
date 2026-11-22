@@ -33,6 +33,12 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS promos (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, percent REAL NOT NULL, scope TEXT NOT NULL DEFAULT 'all', target TEXT,
     starts_at TEXT DEFAULT (datetime('now')), ends_at TEXT NOT NULL, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_chats_last ON chats(last_at)`,
+  // Indexes so "top N" queries read N rows instead of the whole catalog
+  `CREATE INDEX IF NOT EXISTS idx_prod_rank ON products(active, reviews DESC, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_prod_coll ON products(active, collection, reviews DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_prod_upd ON products(active, updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_prod_sync ON products(supplier, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_prod_pid ON products(supplier, supplier_pid)`,
   `CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL, product_id TEXT NOT NULL, variant TEXT, rating INTEGER NOT NULL,
     body TEXT, name TEXT, status TEXT DEFAULT 'published', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), UNIQUE(order_id, product_id))`,
   `CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id, status)`,
@@ -61,8 +67,7 @@ let ready = null;
 export function ensureSchema(env) {
   if (!ready) ready = (async () => {
     await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
-    const { n } = await env.DB.prepare("SELECT COUNT(*) n FROM products").first();
-    if (n === 0) await seed(env);
+    if (!(await env.DB.prepare("SELECT 1 FROM products LIMIT 1").first())) await seed(env); // cheap check (COUNT(*) would read every product)
     await migrateToGeneralStore(env);
     // One-time: clear placeholder ratings so only real reviews ever count
     if (!(await env.DB.prepare("SELECT 1 FROM settings WHERE key='migr_reviews_v1'").first())) await env.DB.batch([

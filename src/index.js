@@ -166,10 +166,23 @@ async function handle(req, env, ctx) {
   if (hit) return hit;
   const res = await handleRoutes(req, env, ctx);
   if (res.status !== 200) return res;
-  const out = new Response(res.body, res);
-  out.headers.set("cache-control", "public, max-age=60");
-  ctx.waitUntil(caches.default.put(key, out.clone()));
+  const ttl = url.pathname === "/api/collections" ? 3600 : url.pathname === "/api/promos" ? 120 : 300; // admin changes still show at once (new cache key)
+  const stored = new Response(res.clone().body, res); stored.headers.set("cache-control", `public, max-age=${ttl}`);
+  ctx.waitUntil(caches.default.put(key, stored));
+  const out = new Response(res.body, res); out.headers.set("cache-control", "public, max-age=30");
   return out;
+}
+// Edge-cache server-rendered pages and the sitemap (search-engine crawlers hit these hardest)
+async function edgeCached(req, env, ctx, ttl, make) {
+  if (req.method !== "GET" || typeof caches === "undefined") return make();
+  const url = new URL(req.url);
+  let v = "0"; try { v = (await env.DB.prepare("SELECT value FROM settings WHERE key='cache_v'").first())?.value || "0"; } catch {}
+  const key = new Request(`${url.origin}/__page${url.pathname}?cv=${v}&${url.searchParams}`);
+  const hit = await caches.default.match(key);
+  if (hit) { const h = new Response(hit.body, hit); h.headers.set("cache-control", "public, max-age=0, must-revalidate"); return h; }
+  const res = await make();
+  if (res.status === 200) { const st = new Response(res.clone().body, res); st.headers.set("cache-control", `public, max-age=${ttl}`); ctx.waitUntil(caches.default.put(key, st)); }
+  return res;
 }
 // Add-to-cart offer: a hidden voucher (default CART10, 10% off) shown to shoppers the first time they add to cart.
 async function cartOffer(env) {
@@ -1057,13 +1070,13 @@ export default {
           if (url.hostname !== site.hostname && !path.startsWith("/admin")) return Response.redirect(site.origin + path + url.search, 301);
         }
         if (path.startsWith("/media/")) return await serveMedia(req, env, decodeURIComponent(path.slice(7)));
-        if (path === "/sitemap.xml") return await sitemap(req, env);
+        if (path === "/sitemap.xml") return await edgeCached(req, env, ctx, 43200, () => sitemap(req, env));
         if (path === "/robots.txt") return robots(req, env);
         const k = path.match(/^\/indexnow-([a-f0-9]{32})\.txt$/);
         if (k) { await ensureSchema(env); return k[1] === (await indexNowKey(env)) ? new Response(k[1], { headers: { "content-type": "text/plain" } }) : new Response("Not found", { status: 404 }); }
         const accept = req.headers.get("accept") || "";
         if ((req.method === "GET" || req.method === "HEAD") && !/\.[a-z0-9]+$/i.test(path) && !path.startsWith("/admin") && (accept.includes("text/html") || accept === "*/*" || !accept))
-          return await renderPage(req, env);
+          return /^\/(cart|checkout|thank-you|track|account|admin)/.test(path) ? await renderPage(req, env) : await edgeCached(req, env, ctx, 900, () => renderPage(req, env));
       } catch (e) { console.error("seo", e); }
       return env.ASSETS.fetch(req);
     }
