@@ -7,7 +7,7 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/", "/products/*", "/collections/*", "/categories", "/pages/*", "/search", "/cart", "/checkout", "/thank-you", "/track", "/account", "/sitemap.xml", "/robots.txt", "/indexnow-*", "/media/*", "/live", "/videos"]
+    "run_worker_first": ["/api/*", "/", "/products/*", "/collections/*", "/categories", "/pages/*", "/search", "/cart", "/checkout", "/thank-you", "/track", "/account", "/sitemap.xml", "/robots.txt", "/merchant-feed.xml", "/llms.txt", "/indexnow-*", "/media/*", "/live", "/videos"]
   },
   // Video storage (Premium Video / Live replays)
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "leeyspremium-media" }],

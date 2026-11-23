@@ -3,7 +3,7 @@ import { evaluate, voucherTitle, eligibleSubtotal, PUBLIC_FIELDS } from "./vouch
 import { activeGifts, giftLines, publicGifts } from "./gifts.js";
 import { activePromos, priced, schedules, windowEnd, scheduleText } from "./promos.js";
 import { mediaReady, startUpload, uploadPart, completeUpload, deleteObject, serveMedia, embedUrl } from "./media.js";
-import { renderPage, sitemap, robots, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
+import { renderPage, sitemap, robots, merchantFeed, llmsTxt, indexNowKey, pingIndexNow, allSitePaths, siteUrl } from "./seo.js";
 import { ensureSchema, toPublic, toAdmin, orderOut, parse, getSetting, setSetting } from "./db.js";
 import { createPaypalOrder, capturePaypalOrder } from "./paypal.js";
 import { cryptoReady, createCryptoInvoice, verifyIpn } from "./crypto-pay.js";
@@ -1072,6 +1072,8 @@ export default {
         if (path.startsWith("/media/")) return await serveMedia(req, env, decodeURIComponent(path.slice(7)));
         if (path === "/sitemap.xml") return await edgeCached(req, env, ctx, 43200, () => sitemap(req, env));
         if (path === "/robots.txt") return robots(req, env);
+        if (path === "/merchant-feed.xml") return await edgeCached(req, env, ctx, 21600, () => merchantFeed(req, env));
+        if (path === "/llms.txt") return await edgeCached(req, env, ctx, 21600, () => llmsTxt(req, env));
         const k = path.match(/^\/indexnow-([a-f0-9]{32})\.txt$/);
         if (k) { await ensureSchema(env); return k[1] === (await indexNowKey(env)) ? new Response(k[1], { headers: { "content-type": "text/plain" } }) : new Response("Not found", { status: 404 }); }
         const accept = req.headers.get("accept") || "";

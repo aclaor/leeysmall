@@ -174,17 +174,18 @@ ${[u(base + "/", latest, "1.0"), u(base + "/collections/all", latest, "0.9"), u(
   return new Response(xml, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
 }
 export function robots(req, env) {
-  const base = siteUrl(env, req);
+  const base = siteUrl(env, req), rules = "Allow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /cart\nDisallow: /checkout\nDisallow: /thank-you\nDisallow: /account";
+  // Search engines and AI search/assistant crawlers are welcome to read the shop (so it can appear in ChatGPT, Perplexity, Claude, Copilot, Gemini answers)
+  const ai = ["Googlebot", "Bingbot", "OAI-SearchBot", "ChatGPT-User", "GPTBot", "PerplexityBot", "Perplexity-User", "ClaudeBot", "Claude-SearchBot", "Claude-User", "Google-Extended", "Applebot", "Applebot-Extended", "DuckAssistBot", "Amazonbot", "meta-externalagent"];
   return new Response(`User-agent: *
-Allow: /
-Disallow: /admin
-Disallow: /api/
-Disallow: /cart
-Disallow: /checkout
-Disallow: /thank-you
-Disallow: /account
+${rules}
+
+${ai.map((b) => `User-agent: ${b}`).join("\n")}
+${rules}
 
 Sitemap: ${base}/sitemap.xml
+# Product feed for Google Merchant Center: ${base}/merchant-feed.xml
+# Store guide for AI assistants: ${base}/llms.txt
 `, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=86400" } });
 }
 
@@ -208,4 +209,47 @@ export async function pingIndexNow(env, base, paths) {
 export async function allSitePaths(env) {
   const [cols, prods] = await Promise.all([env.DB.prepare("SELECT id FROM collections").all(), env.DB.prepare("SELECT id FROM products WHERE active=1").all()]);
   return ["/", "/collections/all", ...cols.results.map((c) => "/collections/" + c.id), ...prods.results.map((p) => "/products/" + p.id), ...Object.keys(PAGES).map((k) => "/pages/" + k)];
+}
+
+/* ---------- Google Merchant Center product feed (free Shopping listings) ---------- */
+export async function merchantFeed(req, env) {
+  await ensureSchema(env);
+  const base = siteUrl(env, req);
+  const rows = (await env.DB.prepare("SELECT id, title, description, price, stock, images, collection, ships FROM products WHERE active=1 ORDER BY updated_at DESC LIMIT 10000").all()).results;
+  const cols = Object.fromEntries((await env.DB.prepare("SELECT id, name FROM collections").all()).results.map((c) => [c.id, c.name]));
+  const clean = (t, n) => esc(String(t || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, n));
+  const items = rows.map((p) => { const imgs = parse(p.images, []).filter((x) => /^https?:/.test(x)); if (!imgs.length) return "";
+    return `<item><g:id>${esc(p.id)}</g:id><g:title>${clean(p.title, 150)}</g:title><g:description>${clean(p.description || p.title, 4900)}</g:description><g:link>${esc(base)}/products/${esc(p.id)}</g:link>
+<g:image_link>${esc(imgs[0])}</g:image_link>${imgs.slice(1, 6).map((x) => `<g:additional_image_link>${esc(x)}</g:additional_image_link>`).join("")}<g:availability>${p.stock > 0 ? "in_stock" : "out_of_stock"}</g:availability>
+<g:price>${Number(p.price).toFixed(2)} USD</g:price><g:condition>new</g:condition><g:brand>LeeysPremium</g:brand><g:identifier_exists>no</g:identifier_exists>${cols[p.collection] ? `<g:product_type>${clean(cols[p.collection], 750)}</g:product_type>` : ""}</item>`; }).join("\n");
+  return new Response(`<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel><title>LeeysPremium</title><link>${esc(base)}</link><description>LeeysPremium product feed</description>\n${items}\n</channel></rss>`,
+    { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
+}
+
+/* ---------- llms.txt: a plain-language guide to the store for AI assistants ---------- */
+export async function llmsTxt(req, env) {
+  await ensureSchema(env);
+  const base = siteUrl(env, req);
+  const cols = (await env.DB.prepare("SELECT id, name, blurb FROM collections ORDER BY sort").all()).results;
+  const top = (await env.DB.prepare("SELECT id, title, price FROM products WHERE active=1 ORDER BY reviews DESC, created_at DESC LIMIT 40").all()).results;
+  return new Response(`# LeeysPremium
+
+> LeeysPremium (leeyspremium.com) is an online general store by Leeys Technology selling home & kitchen, electronics, fashion, beauty & health, sports & outdoors, toys, pets and automotive products. It ships to the United States and worldwide, with free US shipping on orders over $49, tracking on every order and 30-day returns. Payment by PayPal, cards, Venmo and cryptocurrency.
+
+## Shop by category
+${cols.map((c) => `- [${c.name}](${base}/collections/${c.id})${c.blurb ? `: ${c.blurb}` : ""}`).join("\n")}
+
+## Popular products
+${top.map((p) => `- [${p.title}](${base}/products/${p.id}): $${Number(p.price).toFixed(2)}`).join("\n")}
+
+## Store policies
+- [Shipping](${base}/pages/shipping)
+- [Returns & refunds](${base}/pages/returns)
+- [Contact](${base}/pages/contact)
+- [Track an order](${base}/track)
+
+## Machine-readable
+- [Sitemap](${base}/sitemap.xml)
+- [Product feed](${base}/merchant-feed.xml)
+`, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" } });
 }
