@@ -936,10 +936,12 @@ async function mySpins(q = {}) { try { return (await api("/api/spins/mine", { de
 async function renderSpinHome() {
   const [ps, mine] = await Promise.all([loadSpins(), mySpins()]), slot = $("#spinSlot"); if (!slot || !ps.length) return;
   const ready = mine.filter((x) => !x.prizeId);
-  slot.innerHTML = `<div class="wrap">${ps.map((p) => `<div class="spin-card"><div class="spin-copy"><span class="eyebrow">🎡 ${esc(p.title)}</span>
-      <h2>Spend <span class="dz-worth">${money(p.minSpend)}</span>, spin & win a free gift</h2><p>Every spin wins — one order of ${money(p.minSpend)} or more unlocks a spin, and your prize ships free with no extra cost. Ends ${new Date(p.endsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.</p>
+  // Your title is the headline; any "$200"-style amount in it is highlighted
+  const head = (t) => esc(t).replace(/\$\s?\d[\d,]*(\.\d{1,2})?/g, (m) => `<span class="dz-worth">${m}</span>`);
+  slot.innerHTML = `<div class="wrap">${ps.map((p) => `<div class="spin-card"><div class="spin-copy"><span class="eyebrow">🎡 Spin & Win · every spin wins</span>
+      <h2>${head(p.title)}</h2><p>One order of <b>${money(p.minSpend)}</b> or more unlocks a free spin — every spin wins one of these ${p.prizes.length} prizes, shipped free. Ends ${new Date(p.endsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.</p>
       ${ready.some((x) => x.promoId === p.id) ? `<button class="btn accent" data-spin-now="${esc(ready.find((x) => x.promoId === p.id).code)}">🎉 You have a spin waiting — spin now</button>` : `<a class="btn accent" href="/collections/all" data-link>Shop now</a>`}</div>
-    <div class="spin-prizes">${p.prizes.slice(0, 6).map((z) => `<a href="/products/${z.id}" data-link title="${esc(z.title)}">${z.image ? `<img src="${esc(z.image)}" alt="" loading="lazy">` : "<span>🎁</span>"}<small>${money(z.value)}</small></a>`).join("")}</div></div>`).join("")}</div>`;
+    <div class="spin-prizes" style="--n:${Math.min(4, Math.max(2, Math.ceil(p.prizes.length / 2)))}">${p.prizes.slice(0, 8).map((z) => `<a href="/products/${z.id}" data-link title="${esc(z.title)}">${z.image ? `<img src="${esc(z.image)}" alt="" loading="lazy">` : "<span>🎁</span>"}<small>${money(z.value)}</small></a>`).join("")}</div></div>`).join("")}</div>`;
   slot.querySelectorAll("[data-spin-now]").forEach((b) => (b.onclick = () => spinModal(b.dataset.spinNow, ps.find((p) => p.id === mine.find((x) => x.code === b.dataset.spinNow)?.promoId))));
 }
 async function showSpinsFor(q, sel) {

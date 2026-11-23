@@ -1006,3 +1006,6 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .spin-win { display: flex; gap: 12px; align-items: center; text-align: left; padding: 12px; border-radius: 14px; background: rgba(255,210,63,.12); border: 1px solid rgba(255,210,63,.45); margin-bottom: 6px; }
 .spin-win img { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: #fff; flex: none; } .spin-win div { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); } .spin-win b { color: #fff; font-size: 15px; }
 @media (max-width: 800px) { .spin-card { grid-template-columns: 1fr; padding: 20px 16px; } }
+.spin-prizes { grid-template-columns: repeat(var(--n, 3), 1fr); }
+.spin-copy p b { color: #fff; }
+@media (max-width: 560px) { .spin-prizes { grid-template-columns: repeat(4, 1fr); gap: 6px; } .spin-prizes small { font-size: 9px; padding: 1px 5px; } }
