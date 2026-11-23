@@ -153,6 +153,8 @@ export async function renderPage(req, env) {
 }
 
 /* ---------- sitemap.xml & robots.txt ---------- */
+// Sitemaps/feeds need plain ASCII URLs: percent-encode spaces and non-Latin characters (e.g. CJ's "QQ截图…png" image names)
+const safeUrl = (u) => { try { return encodeURI(decodeURI(String(u).trim())); } catch { return encodeURI(String(u).trim()); } };
 export async function sitemap(req, env) {
   await ensureSchema(env);
   const base = siteUrl(env, req);
@@ -168,7 +170,7 @@ export async function sitemap(req, env) {
 ${[u(base + "/", latest, "1.0"), u(base + "/collections/all", latest, "0.9"), u(base + "/categories", latest, "0.8"), u(base + "/videos", latest, "0.6"), u(base + "/live", null, "0.5"),
   ...cols.results.map((c) => u(`${base}/collections/${c.id}`, latest, "0.8")),
   ...prods.results.map((p) => u(`${base}/products/${p.id}`, day(p.updated_at), "0.7",
-    parse(p.images, []).filter((x) => /^https?:/.test(x)).slice(0, 3).map((src) => `<image:image><image:loc>${esc(src)}</image:loc></image:image>`).join(""))),
+    parse(p.images, []).filter((x) => /^https?:/.test(x)).slice(0, 3).map((src) => `<image:image><image:loc>${esc(safeUrl(src))}</image:loc></image:image>`).join(""))),
   ...Object.keys(PAGES).map((k) => u(`${base}/pages/${k}`, null, "0.3"))].join("\n")}
 </urlset>`;
   return new Response(xml, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
@@ -220,7 +222,7 @@ export async function merchantFeed(req, env) {
   const clean = (t, n) => esc(String(t || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, n));
   const items = rows.map((p) => { const imgs = parse(p.images, []).filter((x) => /^https?:/.test(x)); if (!imgs.length) return "";
     return `<item><g:id>${esc(p.id)}</g:id><g:title>${clean(p.title, 150)}</g:title><g:description>${clean(p.description || p.title, 4900)}</g:description><g:link>${esc(base)}/products/${esc(p.id)}</g:link>
-<g:image_link>${esc(imgs[0])}</g:image_link>${imgs.slice(1, 6).map((x) => `<g:additional_image_link>${esc(x)}</g:additional_image_link>`).join("")}<g:availability>${p.stock > 0 ? "in_stock" : "out_of_stock"}</g:availability>
+<g:image_link>${esc(safeUrl(imgs[0]))}</g:image_link>${imgs.slice(1, 6).map((x) => `<g:additional_image_link>${esc(safeUrl(x))}</g:additional_image_link>`).join("")}<g:availability>${p.stock > 0 ? "in_stock" : "out_of_stock"}</g:availability>
 <g:price>${Number(p.price).toFixed(2)} USD</g:price><g:condition>new</g:condition><g:brand>LeeysPremium</g:brand><g:identifier_exists>no</g:identifier_exists>${cols[p.collection] ? `<g:product_type>${clean(cols[p.collection], 750)}</g:product_type>` : ""}</item>`; }).join("\n");
   return new Response(`<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel><title>LeeysPremium</title><link>${esc(base)}</link><description>LeeysPremium product feed</description>\n${items}\n</channel></rss>`,
     { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
