@@ -1139,7 +1139,7 @@ async function setup() {
         draw();
       }));
     };
-    $("#tq", m).oninput = draw; $("#tv", m).onchange = draw; $("#tc", m).onclick = () => m.remove(); m.onclick = (e) => e.target === m && m.remove();
+    $("#tq", m).oninput = draw; $("#tv", m).onchange = draw; $("#tc", m).onclick = () => m.remove(); m.onclick = (e) => { if (e.target === m) m.remove(); };
     $("#ts", m).onclick = () => { m.remove(); saveTile(key, picked, picked.length ? "Tile updated" : "Tile is automatic again"); };
     draw();
   }));
