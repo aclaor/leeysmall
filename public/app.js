@@ -178,7 +178,24 @@ function timeLeft(iso) {
   const pad = (n) => String(n).padStart(2, "0");
   return s <= 0 ? "ended" : d ? `${d}d ${h}h ${pad(mi)}m` : `${pad(h)}:${pad(mi)}:${pad(se)}`;
 }
-setInterval(() => document.querySelectorAll("[data-ends]").forEach((el) => (el.textContent = timeLeft(el.dataset.ends))), 1000);
+// Sales that have ended go back to the regular price straight away (even if the product list was cached a few minutes)
+function expirePromos() {
+  const now = Date.now(); let n = 0;
+  for (const p of PRODUCTS) if (p.promo && new Date(p.promo.endsAt).getTime() <= now) { if (p.compareAt) p.price = p.compareAt; p.compareAt = null; p.promo = null; n++; }
+  if (PROMO.promos) PROMO.promos = PROMO.promos.filter((x) => !x.endsAt || new Date(x.endsAt).getTime() > now);
+  return n;
+}
+setInterval(() => {
+  let ended = false;
+  document.querySelectorAll("[data-ends]").forEach((el) => {
+    if (new Date(el.dataset.ends).getTime() > Date.now()) { el.textContent = timeLeft(el.dataset.ends); return; }
+    ended = true;
+    const box = el.closest(".promo-line, .flash-timer, .az-pill"); // replace the whole "ends in …" text
+    if (box) { box.textContent = "Sale ended"; box.classList.add("ended"); } else el.textContent = "ended";
+    el.removeAttribute("data-ends");
+  });
+  if (ended) expirePromos(); // next page shows regular prices; checkout always uses the server's current price
+}, 1000);
 // Vouchers can cover the whole store, one category, or chosen products
 const vMatches = (v, p) => !v.scope || v.scope === "all" || (v.scope === "collection" ? p.collection === v.target : (v.target || []).includes(p.id));
 const vouchersFor = (p) => PROMO.vouchers.filter((v) => vMatches(v, p));
@@ -1282,6 +1299,7 @@ function notFound() { app.innerHTML = `<div class="wrap prose" style="text-align
 
 /* ---------- Router ---------- */
 function route() {
+  expirePromos();
   const { pathname, search } = location, params = new URLSearchParams(search);
   closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); clearInterval(DRAW.timer); VFEED.obs?.disconnect();
   let m;

@@ -166,7 +166,11 @@ async function handle(req, env, ctx) {
   if (hit) return hit;
   const res = await handleRoutes(req, env, ctx);
   if (res.status !== 200) return res;
-  const ttl = url.pathname === "/api/collections" ? 3600 : url.pathname === "/api/promos" ? 120 : 300; // admin changes still show at once (new cache key)
+  let ttl = url.pathname === "/api/collections" ? 3600 : url.pathname === "/api/promos" ? 120 : 300; // admin changes still show at once (new cache key)
+  if (url.pathname !== "/api/collections") { // never cache past the moment a sale ends
+    const txt = await res.clone().text(), now = Date.now();
+    for (const m of txt.matchAll(/"endsAt":"([^"]+)"/g)) { const left = (new Date(m[1]).getTime() - now) / 1000; if (left > 0) ttl = Math.min(ttl, Math.max(5, Math.floor(left))); }
+  }
   const stored = new Response(res.clone().body, res); stored.headers.set("cache-control", `public, max-age=${ttl}`);
   ctx.waitUntil(caches.default.put(key, stored));
   const out = new Response(res.body, res); out.headers.set("cache-control", "public, max-age=30");

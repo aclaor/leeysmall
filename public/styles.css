@@ -1009,3 +1009,5 @@ body.home-wide .az-quad-grid { grid-template-columns: repeat(var(--n, 4), minmax
 .spin-prizes { grid-template-columns: repeat(var(--n, 3), 1fr); }
 .spin-copy p b { color: #fff; }
 @media (max-width: 560px) { .spin-prizes { grid-template-columns: repeat(4, 1fr); gap: 6px; } .spin-prizes small { font-size: 9px; padding: 1px 5px; } }
+.promo-line.ended, .flash-timer.ended, .az-pill.ended { color: var(--muted) !important; background: rgba(255,255,255,.06) !important; }
+.promo-line.ended::before { content: none; }
