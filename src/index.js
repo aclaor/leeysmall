@@ -177,7 +177,7 @@ async function edgeCached(req, env, ctx, ttl, make) {
   if (req.method !== "GET" || typeof caches === "undefined") return make();
   const url = new URL(req.url);
   let v = "0"; try { v = (await env.DB.prepare("SELECT value FROM settings WHERE key='cache_v'").first())?.value || "0"; } catch {}
-  const key = new Request(`${url.origin}/__page${url.pathname}?cv=${v}&${url.searchParams}`);
+  const key = new Request(`${url.origin}/__page${url.pathname}?cv=${v}&b=2&${url.searchParams}`); // b = bump when page/feed formats change
   const hit = await caches.default.match(key);
   if (hit) { const h = new Response(hit.body, hit); h.headers.set("cache-control", "public, max-age=0, must-revalidate"); return h; }
   const res = await make();
