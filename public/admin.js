@@ -570,6 +570,7 @@ async function productModal(p) {
       catch (er) { toast(er.message); } };
   };
   const pvUp = $("#pvUp", m);
+  $("#pvFile", m) && ($("#pvFile", m).onchange = (e) => { if (e.target.files[0]) $("#pvProg", m).textContent = "Ready — press Upload video (or Save)"; });
   if (pvUp) pvUp.onclick = async () => {
     const file = $("#pvFile", m).files[0]; if (!file) return toast("Choose a video file first");
     pvUp.disabled = true;
@@ -604,7 +605,11 @@ async function productModal(p) {
     if (!f.variants.disabled) data.variants = f.variants.value.split("\n").map((l) => l.split(":")).filter((x) => x.length === 2 && x[1].trim())
       .map(([n, o]) => ({ name: n.trim(), options: o.split(",").map((x) => x.trim()).filter(Boolean) }));
     if (isNew) data.supplier = f.supplier.value;
-    try { await api(isNew ? "/api/admin/products" : "/api/admin/products/" + p.id, isNew ? "POST" : "PATCH", data); m.remove(); toast("Saved"); products(); }
+    try { await api(isNew ? "/api/admin/products" : "/api/admin/products/" + p.id, isNew ? "POST" : "PATCH", data);
+      const vf = !isNew && $("#pvFile", m)?.files[0]; // a video was chosen but "Upload video" wasn't pressed — upload it now
+      if (vf) { const sb = f.querySelector("[type=submit]") || f.querySelector("button.accent"); if (sb) sb.disabled = true;
+        await uploadVideo(vf, { productId: p.id, kind: "product", title: p.title }, (x) => { $("#pvProg", m).textContent = `Uploading video… ${Math.round(x * 100)}%`; toast(`Uploading video… ${Math.round(x * 100)}%`); }); }
+      m.remove(); toast(vf ? "Saved — video added to product" : "Saved"); products(); }
     catch (er) { toast(er.message); }
   };
 }
