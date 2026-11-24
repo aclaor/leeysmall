@@ -291,11 +291,11 @@ async function dashboard() {
 async function orders() {
   const f = sessionStorage.getItem("lm_of") || "";
   const list = await api("/api/admin/orders" + (f ? "?status=" + f : ""));
-  main().innerHTML = `<h1>Orders</h1><div class="chips" style="margin-bottom:16px">${[["", "All"], ...STATUSES.map((s) => [s, LABEL[s]])].map(([v, t]) => `<button class="chip ${v === f ? "on" : ""}" data-f="${v}">${t}</button>`).join("")}</div>
+  main().innerHTML = `<h1>Orders</h1><div class="chips" style="margin-bottom:16px">${[["", "All"], ...STATUSES.map((s) => [s, LABEL[s]]), ["pending", "⏳ Awaiting payment"]].map(([v, t]) => `<button class="chip ${v === f ? "on" : ""}" data-f="${v}">${t}</button>`).join("")}</div>
     <div class="panel tbl-wrap" style="padding:6px 10px">${list.length ? `<table><tr><th>Order</th><th>Date</th><th>Customer</th><th>Items</th><th>Total</th><th>Profit</th><th>Status</th></tr>
       ${list.map((o) => `<tr class="click" data-o="${o.id}"><td><b>#${esc(o.id)}</b></td><td>${date(o.created_at)}</td><td>${esc(o.name)}<div class="muted" style="font-size:12px">${esc(o.country)}</div></td>
         <td>${o.items.reduce((s, l) => s + l.qty, 0)}</td><td>${money(o.total)}</td><td>${money(o.total - o.cost_total)}</td><td>${st(o.status)}</td></tr>`).join("")}</table>`
-      : `<p class="muted" style="padding:12px">No orders here yet.</p>`}</div>`;
+      : `<p class="muted" style="padding:12px">${f === "pending" ? "No unpaid checkouts. Crypto orders wait here until the coins arrive (usually 10–60 min after sending), then move to Paid automatically." : "No orders here yet."}</p>`}</div>`;
   main().querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { sessionStorage.setItem("lm_of", b.dataset.f); orders(); }));
   main().querySelectorAll("[data-o]").forEach((r) => (r.onclick = () => orderModal(list.find((o) => o.id === r.dataset.o))));
 }
