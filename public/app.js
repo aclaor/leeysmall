@@ -627,8 +627,8 @@ let VFEED = { obs: null, muted: true };
 function videosPage() {
   document.title = "Premium Video — LeeysPremium";
   const list = PRODUCTS.filter((p) => p.video).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  if (!list.length) { app.innerHTML = `<div class="wrap prose" style="text-align:center;margin:0 auto"><h1>▶ Premium Video</h1><p>Product videos are coming soon. Meanwhile, catch us on <a href="/live" data-link style="color:var(--blue-2)">Premium Live</a>.</p></div>`; return; }
-  app.innerHTML = `<div class="wrap vpage"><div class="vhead"><h1>▶ Premium Video</h1><p class="muted">Watch before you buy · ${list.length} product video${list.length === 1 ? "" : "s"} · swipe or scroll</p></div>
+  if (!list.length) { app.innerHTML = `${lvSwitch("video")}<div class="wrap prose" style="text-align:center;margin:0 auto"><h1>▶ Premium Video</h1><p>Product videos are coming soon. Meanwhile, catch us on <a href="/live" data-link style="color:var(--blue-2)">Premium Live</a>.</p></div>`; return; }
+  app.innerHTML = `<div class="wrap vpage">${lvSwitch("video")}<div class="vhead"><h1>▶ Premium Video</h1><p class="muted">Watch before you buy · ${list.length} product video${list.length === 1 ? "" : "s"} · swipe or scroll</p></div>
     <div class="vfeed" id="vfeed">${list.map((p, i) => `<section class="vslide" data-vi="${i}">
       <video src="${esc(p.video)}" muted playsinline loop preload="${i < 2 ? "auto" : "metadata"}" ${p.images?.[0] ? `poster="${esc(p.images[0])}"` : ""}></video>
       <button class="vmute" aria-label="Sound on/off">🔇</button>
@@ -655,7 +655,7 @@ async function livePage() {
   app.innerHTML = `<div class="wrap prose"><p class="muted">Loading Premium Live…</p></div>`;
   let d; try { d = await api("/api/live"); } catch { app.innerHTML = `<div class="wrap prose"><h1>Premium Live</h1><p>Couldn't load the live page. Please refresh.</p></div>`; return; }
   if (location.pathname !== "/live") return;
-  LIVE.status = d.status; LIVE.lastId = d.comments.length ? d.comments[d.comments.length - 1].id : 0;
+  LIVE.status = d.status; LIVE.switchHtml = lvSwitch("live"); LIVE.lastId = d.comments.length ? d.comments[d.comments.length - 1].id : 0;
   const pinned = d.pinned.map((id) => PRODUCTS.find((p) => p.id === id)).filter(Boolean);
   const badge = { live: `<span class="live-badge">● LIVE</span>`, replay: `<span class="live-badge replay">▶ REPLAY</span>`, scheduled: `<span class="live-badge sched">📅 UPCOMING</span>`, off: "" }[d.status];
   const player = d.status === "live" || d.status === "replay"
@@ -664,7 +664,7 @@ async function livePage() {
         <div class="muted">${new Date(d.startsAt).toLocaleString([], { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div></div>`
       : `<div><div style="font-size:42px">📺</div><b>We're not live right now</b><p class="muted">Follow along next time — meanwhile, watch our <a href="/videos" data-link style="color:var(--blue-2)">product videos</a>.</p></div>`}</div>`;
   const name = (() => { try { return localStorage.getItem("lp_name") || ""; } catch { return ""; } })();
-  app.innerHTML = `<div class="wrap live-page">
+  app.innerHTML = `<div class="wrap live-page">${LIVE.switchHtml || ""}
     <div class="live-main"><div class="live-player">${player}${badge}</div>
       <div class="live-title"><h1>${esc(d.title || "Premium Live")}</h1>${d.note ? `<p class="muted">${esc(d.note)}</p>` : ""}</div>
       ${pinned.length ? `<div class="live-pins"><h3>🛍 Featured in this live</h3><div class="rail">${pinned.map(card).join("")}</div></div>` : ""}</div>
@@ -1282,9 +1282,102 @@ function track(params) {
   };
 }
 
-function account() {
-  document.title = "Account — LeeysPremium";
-  app.innerHTML = `<div class="wrap prose"><h1>Sign in</h1><form class="card-box" onsubmit="event.preventDefault()"><div class="field"><input type="email" placeholder="Email"></div><button class="btn block">Continue</button><p class="muted" style="font-size:14px">Customer accounts with order history arrive in the next stage.</p></form></div>`;
+/* ---------- Me: everything saved on this device (no passwords; payment details are never stored) ---------- */
+async function account() {
+  document.title = "Me — LeeysPremium";
+  let addr = {}; try { addr = JSON.parse(localStorage.getItem("lp_addr") || "{}") || {}; } catch {}
+  const orders = myOrders(), codes = myCodes(), vs = [...new Set([...wallet(), offerCode()].filter(Boolean))];
+  const name = [addr.firstName, addr.lastName].filter(Boolean).join(" ");
+  app.innerHTML = `<div class="wrap me">
+    <div class="me-head"><div class="me-av">${esc((addr.firstName || "L")[0].toUpperCase())}</div><div><h1>${name ? `Hi, ${esc(addr.firstName)}` : "My LeeysPremium"}</h1><span class="muted">${addr.email ? esc(addr.email) : "Saved on this device · no password needed"}</span></div></div>
+    <div class="me-grid">
+      <a class="me-tile" href="#meOrders"><b>${orders.length}</b><span>Orders</span></a><a class="me-tile" href="#meVouchers"><b>${vs.length}</b><span>Vouchers</span></a>
+      <a class="me-tile" href="/promo" data-link><b>${codes.length}</b><span>Draw tickets</span></a><a class="me-tile" href="/notifications" data-link><b>🔔</b><span>Notifications</span></a></div>
+    <section class="me-card" id="meAddr"><div class="row-between"><h2>📍 Shipping address & contact</h2><button class="btn sm ghost" id="meEdit">${addr.address1 ? "Edit" : "Add"}</button></div>
+      <div id="meAddrView">${addr.address1 ? `<p><b>${esc(name)}</b><br>${esc(addr.address1)}${addr.address2 ? ", " + esc(addr.address2) : ""}<br>${esc([addr.city, addr.province, addr.zip].filter(Boolean).join(", "))}<br>${esc(CONFIG.countries[addr.country] || addr.country || "")}${addr.phone ? `<br>📞 ${esc(addr.phone)}` : ""}${addr.email ? `<br>✉️ ${esc(addr.email)}` : ""}</p><p class="muted" style="font-size:13px">Filled in automatically at checkout.</p>` : `<p class="muted">No address saved yet. Add one to check out faster.</p>`}</div>
+      <form id="meForm" hidden class="me-form"><input class="inp" name="email" type="email" placeholder="Email" value="${esc(addr.email || "")}"><div class="two"><input class="inp" name="firstName" placeholder="First name" value="${esc(addr.firstName || "")}"><input class="inp" name="lastName" placeholder="Last name" value="${esc(addr.lastName || "")}"></div>
+        <select class="inp" name="country">${COUNTRY_OPTS()}</select><input class="inp" name="address1" placeholder="Street address" value="${esc(addr.address1 || "")}"><input class="inp" name="address2" placeholder="Apartment, unit (optional)" value="${esc(addr.address2 || "")}">
+        <div class="two"><input class="inp" name="city" placeholder="City" value="${esc(addr.city || "")}"><input class="inp" name="province" placeholder="State / Province" value="${esc(addr.province || "")}"></div>
+        <div class="two"><input class="inp" name="zip" placeholder="ZIP / Postal code" value="${esc(addr.zip || "")}"><input class="inp" name="phone" placeholder="Phone" value="${esc(addr.phone || "")}"></div>
+        <div class="flex" style="gap:8px"><button class="btn accent">Save</button><button type="button" class="btn ghost" id="meCancel">Cancel</button></div></form></section>
+    <section class="me-card"><h2>💳 Payment methods</h2><div class="pay-icons"><span>PayPal</span><span>Visa / Mastercard</span><span>Venmo</span><span>Pay Later</span>${CONFIG.crypto ? "<span>₿ Bitcoin · ETH · USDT</span>" : ""}</div>
+      <p class="muted" style="font-size:13px;margin-bottom:0">For your safety we never store card or bank details. You pay securely each time through PayPal (cards, bank, Venmo) or our crypto checkout.</p></section>
+    <section class="me-card" id="meOrders"><h2>📦 My orders</h2>${orders.length ? `<div id="meOrderList" class="muted">Loading…</div>` : `<p class="muted">Orders you place on this device appear here. Have an order from another device? <a href="/track" data-link style="text-decoration:underline">Track it here</a>.</p>`}</section>
+    <section class="me-card" id="meVouchers"><h2>🎟 My vouchers</h2>${vs.length ? `<div class="me-vs">${vs.map((c) => `<code>${esc(c)}</code>`).join("")}</div><p class="muted" style="font-size:13px">Applied automatically at checkout when they fit your order.</p>` : `<p class="muted">No vouchers yet. <a href="/promo" data-link style="text-decoration:underline">See today's promos</a>.</p>`}</section>
+    <section class="me-card"><h2>⚙️ Settings & help</h2><div class="me-links">${"PushManager" in window ? `<button class="me-link" id="mePush">🔔 Notifications on this device</button>` : ""}<a class="me-link" href="/track" data-link>🚚 Track an order</a><a class="me-link" href="/pages/returns" data-link>↩️ Returns & refunds</a><a class="me-link" href="/pages/contact" data-link>💬 Contact us</a><a class="me-link" href="/pages/privacy" data-link>🔒 Privacy</a><button class="me-link danger" id="meClear">🗑 Remove my saved details from this device</button></div></section></div>`;
+  const f = $("#meForm"); f.country.value = addr.country || CONFIG.country || "US";
+  $("#meEdit").onclick = () => { f.hidden = false; $("#meAddrView").hidden = true; }; $("#meCancel").onclick = () => { f.hidden = true; $("#meAddrView").hidden = false; };
+  f.onsubmit = (e) => { e.preventDefault(); const a = Object.fromEntries(["email", "firstName", "lastName", "country", "address1", "address2", "city", "province", "zip", "phone"].map((k) => [k, f[k].value.trim()])); try { localStorage.setItem("lp_addr", JSON.stringify(a)); } catch {} toast("Saved"); account(); };
+  $("#meClear").onclick = () => { if (!confirm("Remove your saved address, order list, vouchers and tickets from this device? (Your orders themselves aren't affected.)")) return; ["lp_addr", "lp_orders", "lp_vouchers", "lp_voucher", "lp_tickets"].forEach((k) => { try { localStorage.removeItem(k); } catch {} }); toast("Removed from this device"); account(); };
+  $("#mePush") && ($("#mePush").onclick = async () => { if (!DRAW.vapid) { try { const r = await api("/api/draw"); DRAW.vapid = r.vapid; } catch {} } if (!DRAW.vapid) return toast("Notifications switch on automatically during our next prize draw"); enablePush(); });
+  if (orders.length) {
+    const rows = await Promise.all(orders.slice(0, 10).map(async (o) => { try { return await api(`/api/orders/lookup?id=${encodeURIComponent(o.id)}&email=${encodeURIComponent(o.email)}`); } catch { return null; } }));
+    const box = $("#meOrderList"); if (!box) return;
+    box.innerHTML = rows.filter(Boolean).map((o) => `<a class="me-order" href="/track?order=${esc(o.id)}" data-link><div><b>#${esc(o.id)}</b><span>${new Date(o.created_at.replace(" ", "T") + "Z").toLocaleDateString()} · ${o.items.length} item${o.items.length > 1 ? "s" : ""} · ${money(o.total)}</span></div><em class="st st-${esc(o.status)}">${esc(STATUS_TEXT[o.status] || o.status)}</em></a>`).join("") || `<p class="muted">Couldn't load your orders right now.</p>`;
+  }
+}
+
+/* ---------- Promo: every promotion in one place ---------- */
+async function promoPage() {
+  document.title = "Promo — LeeysPremium";
+  const sale = PRODUCTS.filter((p) => p.promo).sort((a, b) => b.promo.percent - a.promo.percent);
+  const promos = (PROMO.promos || []);
+  app.innerHTML = `<div class="promo-page"><div class="wrap"><h1 class="pp-h">🔥 Promo</h1><p class="muted" style="margin:0 0 6px">Every deal, voucher, prize draw and free spin — all in one place.</p></div>
+    ${promos.length ? `<section class="wrap pp-sales">${promos.map((x) => `<a class="pp-sale" href="${x.scope === "collection" ? "/collections/" + x.target : "/collections/all?deal=today"}" data-link><b>⚡ ${esc(x.label)}</b><span>${x.percent}% off${x.scope === "collection" ? " · " + esc(COLLECTIONS.find((c) => c.id === x.target)?.name || "") : ""}</span><small class="promo-line">Ends in <span data-ends="${x.endsAt}">${timeLeft(x.endsAt)}</span></small></a>`).join("")}</section>` : ""}
+    ${voucherStrip()}
+    <section class="spin-home" id="spinSlot"></section>
+    <section class="az-spot" id="draw"><div class="wrap"><div class="az-panel az-spot-in" id="drawSlot"><p class="muted">Loading prize draw…</p></div></div></section>
+    ${(PROMO.schedules || []).length ? `<section class="wrap" style="margin:10px auto"><h2 class="pp-sub">📅 Weekly deals</h2><div class="v-rail">${PROMO.schedules.map((x) => `<a class="sched-card" href="${x.scope === "collection" ? "/collections/" + x.target : "/collections/all"}" data-link><b>📅 ${x.percent}% off</b><span>${esc(x.label)}</span><small>${esc(x.text)}</small></a>`).join("")}</div></section>` : ""}
+    <section class="wrap" style="margin:14px auto 40px"><h2 class="pp-sub">${sale.length ? "🏷 On sale now" : "🛍 Picks for you"}</h2><div class="az-grid">${(sale.length ? sale : [...PRODUCTS].sort((a, b) => (b.sold || 0) - (a.sold || 0))).slice(0, 24).map(rcard).join("")}</div></section></div>`;
+  bindVouchers(); renderSpinHome();
+  await loadDraw(); if ($("#drawSlot") && !DRAW.d) $("#draw").remove();
+}
+
+/* ---------- Notifications: orders, spins, draw results, vouchers, live and sales ---------- */
+const seenN = () => { try { return new Set(JSON.parse(localStorage.getItem("lp_seen_n") || "[]")); } catch { return new Set(); } };
+async function buildNotifications() {
+  const out = [], orders = myOrders();
+  const [od, spins, tix] = await Promise.all([
+    Promise.all(orders.slice(0, 8).map(async (o) => { try { return await api(`/api/orders/lookup?id=${encodeURIComponent(o.id)}&email=${encodeURIComponent(o.email)}`); } catch { return null; } })),
+    mySpins(), api("/api/draw/mine", { device: deviceId(), codes: myCodes() }).then((r) => r.tickets || []).catch(() => [])]);
+  const NOTE = { paid: "We've received your payment and are preparing your order.", processing: "Your order is being prepared by our warehouse.", action_needed: "Your order is being prepared.", shipped: "On its way! Tap to see tracking.", delivered: "Delivered — enjoy! Tap to rate your items.", cancelled: "This order was cancelled.", refunded: "Your refund has been issued." };
+  for (const o of od.filter(Boolean)) out.push({ id: `o:${o.id}:${o.status}`, icon: o.status === "shipped" ? "🚚" : o.status === "delivered" ? "✅" : "📦", title: `Order #${o.id}: ${STATUS_TEXT[o.status] || o.status}`, body: NOTE[o.status] || "", href: `/track?order=${o.id}` });
+  for (const x of spins.filter((x) => !x.prizeId)) out.push({ id: `s:${x.code}`, icon: "🎡", title: "You have a free spin waiting!", body: `${x.promo} — every spin wins a gift.`, href: "/promo", hot: true });
+  for (const x of spins.filter((x) => x.prizeId)) out.push({ id: `sw:${x.code}`, icon: "🎁", title: "Your free spin prize is on its way", body: `Shipping as gift order #${x.giftOrder}.`, href: `/track?order=${x.giftOrder}` });
+  const won = tix.find((t) => t.result === "won" && !t.claimed), lost = tix.find((t) => t.result === "lost" && t.consolation);
+  if (won) out.push({ id: `w:${won.code}`, icon: "🏆", title: "You won the prize draw!", body: `Ticket ${won.code} — claim your prize before ${new Date(won.claimBy).toLocaleDateString()}.`, href: "/promo", hot: true });
+  if (lost) out.push({ id: `l:${lost.code}`, icon: "🎟", title: "Prize draw results are in", body: `Not a winner this time — your thank-you voucher ${lost.consolation} is ready.`, href: "/promo" });
+  const open = tix.filter((t) => !t.result); if (open.length) out.push({ id: `t:${open.length}`, icon: "🎡", title: `You have ${open.length} ticket${open.length > 1 ? "s" : ""} in the prize draw`, body: "Good luck! Results appear here.", href: "/promo" });
+  if (CONFIG.live?.status === "live") out.push({ id: `live:${new Date().toISOString().slice(0, 10)}`, icon: "🔴", title: "Premium Live is on now", body: "Watch and shop live deals.", href: "/live", hot: true });
+  for (const x of (PROMO.promos || []).slice(0, 3)) out.push({ id: `p:${x.id}:${x.endsAt}`, icon: "⚡", title: `${x.label}: ${x.percent}% off`, body: `Ends in ${timeLeft(x.endsAt)}.`, href: "/promo" });
+  const claimable = (PROMO.vouchers || []).filter((v) => !wallet().includes(v.code)); if (claimable.length) out.push({ id: `v:${claimable.map((v) => v.code).join(",")}`, icon: "🎟", title: `${claimable.length} voucher${claimable.length > 1 ? "s" : ""} to claim`, body: claimable.slice(0, 2).map((v) => v.label || v.code).join(" · "), href: "/promo" });
+  return out;
+}
+async function refreshNotifBadge() { try { const n = await buildNotifications(), seen = seenN(), c = n.filter((x) => !seen.has(x.id)).length; const b = $("#tabBadge"); if (b) { b.textContent = c > 9 ? "9+" : c; b.hidden = !c; } } catch {} }
+async function notificationsPage() {
+  document.title = "Notifications — LeeysPremium";
+  app.innerHTML = `<div class="wrap notif"><h1>🔔 Notifications</h1><div id="nList" class="muted">Loading…</div></div>`;
+  const list = await buildNotifications(), seen = seenN(), box = $("#nList"); if (!box) return;
+  box.innerHTML = list.length ? list.map((x) => `<a class="n-item ${seen.has(x.id) ? "" : "new"} ${x.hot ? "hot" : ""}" href="${x.href}" data-link><span class="n-ic">${x.icon}</span><div><b>${esc(x.title)}</b>${x.body ? `<span>${esc(x.body)}</span>` : ""}</div></a>`).join("")
+    : `<div class="n-empty"><div style="font-size:40px">🔕</div><b>You're all caught up</b><p class="muted">Order updates, prize draw results, free spins and new deals will show up here.</p><a class="btn accent" href="/promo" data-link>See today's promos</a></div>`;
+  try { localStorage.setItem("lp_seen_n", JSON.stringify([...new Set([...seen, ...list.map((x) => x.id)])].slice(-200))); } catch {}
+  const b = $("#tabBadge"); if (b) b.hidden = true;
+}
+
+/* ---------- Bottom app bar (phones & tablets), like a shopping app ---------- */
+const lvSwitch = (on) => `<div class="lv-switch"><a href="/videos" data-link class="${on === "video" ? "on" : ""}">Video</a><a href="/live" data-link class="${on === "live" ? "on" : ""}">Live</a></div>`;
+function tabBar() {
+  if ($("#tabBar")) return;
+  const ic = { home: '<path d="M3 11 12 3l9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>', promo: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="8" cy="8" r="1.6"/>',
+    video: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 9 5 3-5 3z"/>', bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/>', me: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>' };
+  const item = (href, key, label, extra = "") => `<a href="${href}" data-link data-tab="${key}"><svg viewBox="0 0 24 24">${ic[key]}</svg><span>${label}</span>${extra}</a>`;
+  document.body.insertAdjacentHTML("beforeend", `<nav class="tab-bar" id="tabBar" aria-label="App menu">${item("/", "home", "Home")}${item("/promo", "promo", "Promo")}${item("/videos", "video", "Live & Video")}${item("/notifications", "bell", "Notifications", `<i class="tab-badge" id="tabBadge" hidden></i>`)}${item("/account", "me", "Me")}</nav>`);
+  refreshNotifBadge();
+}
+function markTab() {
+  const p = location.pathname, key = p === "/" ? "home" : p === "/promo" ? "promo" : p === "/videos" || p === "/live" ? "video" : p === "/notifications" ? "bell" : p === "/account" ? "me" : "";
+  document.querySelectorAll("#tabBar [data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === key));
+  document.body.classList.toggle("no-tabbar", /^\/(checkout|thank-you)/.test(p));
 }
 
 const PAGES = {
@@ -1301,7 +1394,7 @@ function notFound() { app.innerHTML = `<div class="wrap prose" style="text-align
 function route() {
   expirePromos();
   const { pathname, search } = location, params = new URLSearchParams(search);
-  closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); clearInterval(DRAW.timer); VFEED.obs?.disconnect();
+  markTab(); closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); clearInterval(DRAW.timer); VFEED.obs?.disconnect();
   let m;
   if (pathname === "/") home();
   else if (pathname === "/search") collection("all", params);
@@ -1316,6 +1409,8 @@ function route() {
   else if (pathname === "/track") track(params);
   else if (pathname === "/account") account();
   else if (pathname === "/draw-rules") drawRules();
+  else if (pathname === "/promo") promoPage();
+  else if (pathname === "/notifications") notificationsPage();
   else if ((m = pathname.match(/^\/pages\/([\w-]+)$/))) contentPage(m[1]);
   else notFound();
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === pathname));
@@ -1366,7 +1461,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll()
   $("#nav").innerHTML = allLink + COLLECTIONS.slice(0, 2).map(link).join("");
   $("#mobileNav").innerHTML = links + `<a href="/track" data-link>Track order</a>`;
   $("#footerCollections").innerHTML = links;
-  updateCount(); trk("visit"); route(); loadSpins().then((ps) => { if (ps.length && typeof refreshCartViews === "function") refreshCartViews(); });
+  updateCount(); trk("visit"); tabBar(); route(); loadSpins().then((ps) => { if (ps.length && typeof refreshCartViews === "function") refreshCartViews(); });
 })();
 
 /* ---------- Installable app (PWA) ---------- */
