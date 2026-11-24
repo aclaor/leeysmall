@@ -161,9 +161,9 @@ async function handle(req, env, ctx) {
   if (req.method !== "GET" || !CACHED.has(url.pathname) || typeof caches === "undefined") return handleRoutes(req, env, ctx);
   let v = "0";
   try { v = (await env.DB.prepare("SELECT value FROM settings WHERE key='cache_v'").first())?.value || "0"; } catch {}
-  const key = new Request(`${url.origin}${url.pathname}?cv=${v}&${url.searchParams}`);
+  const key = new Request(`${url.origin}${url.pathname}?cv=${v}&code=${CODE_V}&${url.searchParams}`);
   const hit = await caches.default.match(key);
-  if (hit) return hit;
+  if (hit) { const h = new Response(hit.body, hit); h.headers.set("cache-control", "public, max-age=30"); return h; }
   const res = await handleRoutes(req, env, ctx);
   if (res.status !== 200) return res;
   let ttl = url.pathname === "/api/collections" ? 3600 : url.pathname === "/api/promos" ? 120 : 300; // admin changes still show at once (new cache key)
@@ -214,6 +214,7 @@ async function refreshRating(env, pid) {
   await env.DB.prepare(`UPDATE products SET rating=COALESCE((SELECT AVG(rating) FROM reviews WHERE product_id=?1 AND status='published'),0),
     reviews=(SELECT COUNT(*) FROM reviews WHERE product_id=?1 AND status='published') WHERE id=?1`).bind(pid).run();
 }
+const CODE_V = "2026-11-24a"; // bump on deploys that change API output, so old edge copies are ignored
 const bustCache = (env) => setSetting(env, "cache_v", String(Date.now())).catch(() => {});
 async function handleRoutes(req, env, ctx) {
   const url = new URL(req.url), path = url.pathname, m = req.method;
