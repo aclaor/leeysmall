@@ -624,27 +624,43 @@ function collection(id, params) {
 
 /* ---------- Premium Video: swipeable feed of product videos ---------- */
 let VFEED = { obs: null, muted: true };
+/* ---------- Live & Video: full-screen, swipe up/down feed of every product with a video (like Shopee / TikTok) ---------- */
+const VLIKES = () => { try { return new Set(JSON.parse(localStorage.getItem("lp_likes") || "[]")); } catch { return new Set(); } };
 function videosPage() {
-  document.title = "Premium Video — LeeysPremium";
-  const list = PRODUCTS.filter((p) => p.video).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  if (!list.length) { app.innerHTML = `${lvSwitch("video")}<div class="wrap prose" style="text-align:center;margin:0 auto"><h1>▶ Premium Video</h1><p>Product videos are coming soon. Meanwhile, catch us on <a href="/live" data-link style="color:var(--blue-2)">Premium Live</a>.</p></div>`; return; }
-  app.innerHTML = `<div class="wrap vpage">${lvSwitch("video")}<div class="vhead"><h1>▶ Premium Video</h1><p class="muted">Watch before you buy · ${list.length} product video${list.length === 1 ? "" : "s"} · swipe or scroll</p></div>
-    <div class="vfeed" id="vfeed">${list.map((p, i) => `<section class="vslide" data-vi="${i}">
-      <video src="${esc(p.video)}" muted playsinline loop preload="${i < 2 ? "auto" : "metadata"}" ${p.images?.[0] ? `poster="${esc(p.images[0])}"` : ""}></video>
-      <button class="vmute" aria-label="Sound on/off">🔇</button>
-      <div class="vover">${p.promo ? `<span class="badge flash" style="position:static;display:inline-block;margin-bottom:8px">⚡ ${esc(p.promo.label)} · ${p.promo.percent}% off</span>` : ""}
-        <a class="vtitle" href="/products/${p.id}" data-link>${esc(p.title)}</a>
-        <div class="price ${offPct(p) ? "sale" : ""}"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s>` : ""}<span class="muted" style="font-size:13px;margin-left:8px">🚚 ${etaShort(p)}</span></div>
-        <div class="vbtns"><button class="btn accent" data-add="${p.id}" ${p.stock > 0 ? "" : "disabled"}>${p.stock > 0 ? "Add to cart" : "Sold out"}</button><a class="btn ghost" href="/products/${p.id}" data-link>View product</a></div></div></section>`).join("")}</div></div>`;
-  const vids = [...document.querySelectorAll(".vslide video")];
+  document.title = "Live & Video — LeeysPremium";
+  const list = PRODUCTS.filter((p) => p.video).sort((a, b) => (b.promo ? 1 : 0) - (a.promo ? 1 : 0) || (b.sold || 0) - (a.sold || 0) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  document.body.classList.add("immersive");
+  const likes = VLIKES(), heart = '<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.5-9.3C1.2 8.4 3.3 5 6.8 5c2 0 3.6 1.1 5.2 3 1.6-1.9 3.2-3 5.2-3 3.5 0 5.6 3.4 4.3 6.7C19.5 16.4 12 21 12 21z"/></svg>';
+  const share = '<svg viewBox="0 0 24 24"><path d="M14 4l7 7-7 7v-4c-5 0-8 1.5-10 5 .7-5 3-9.5 10-10.5z"/></svg>', snd = (m) => m ? "🔇" : "🔊";
+  app.innerHTML = `<div class="tt">
+    <div class="tt-top"><a class="tt-ic" href="/search" data-link aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></a>
+      <nav class="tt-tabs"><a href="/videos" data-link class="on">Video</a><a href="/live" data-link>Live${CONFIG.live?.status === "live" ? ' <i class="tt-dot"></i>' : ""}</a></nav><span class="tt-ic"></span></div>
+    <div class="tt-feed" id="vfeed">${list.length ? list.map((p, i) => { const off = offPct(p), img = p.images?.[0];
+      return `<section class="tt-slide" data-vi="${i}" data-id="${p.id}"><video src="${esc(p.video)}" muted playsinline loop preload="${i < 2 ? "auto" : "none"}" ${img ? `poster="${esc(img)}"` : ""}></video>
+        <div class="tt-shade"></div><div class="tt-heart-pop">❤</div>
+        <div class="tt-rail"><a class="tt-av" href="/products/${p.id}" data-link>${img ? `<img src="${esc(img)}" alt="">` : "🛍"}<b>+</b></a>
+          <button class="tt-btn tt-like ${likes.has(p.id) ? "on" : ""}" data-like="${p.id}">${heart}<span>${likes.has(p.id) ? "Liked" : "Like"}</span></button>
+          <button class="tt-btn" data-share="${p.id}">${share}<span>Share</span></button><button class="tt-btn tt-snd" data-snd>${snd(VFEED.muted)}<span>Sound</span></button></div>
+        <div class="tt-info"><b class="tt-user">@LeeysPremium</b><p class="tt-cap">${esc(p.title.slice(0, 110))}</p>
+          <div class="tt-card"><div class="tt-thumb">${img ? `<img src="${esc(img)}" alt="">` : art(p)}${off ? `<em>-${off}%</em>` : ""}</div>
+            <div class="tt-cinfo"><span class="tt-ct">${esc(p.title.slice(0, 60))}</span><span class="tt-cm">${p.promo ? `⚡ ${esc(p.promo.label)} · ` : ""}🚚 ${esc(etaShort(p))}</span>
+              <div class="tt-price"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s>` : ""}${p.sold >= 10 ? `<small>${p.sold >= 1000 ? (p.sold / 1000).toFixed(1) + "K+" : p.sold} sold</small>` : ""}</div></div>
+            <div class="tt-acts"><button class="tt-cart" data-add="${p.id}" aria-label="Add to cart" ${p.stock > 0 ? "" : "disabled"}>🛒</button><a class="tt-buy" href="/products/${p.id}" data-link>${p.stock > 0 ? "Buy Now" : "Sold out"}</a></div></div></div></section>`; }).join("")
+      : `<section class="tt-slide tt-empty"><div><div style="font-size:46px">▶</div><b>Product videos are coming soon</b><p>Meanwhile, catch us on <a href="/live" data-link>Premium Live</a> or <a href="/collections/all" data-link>shop all products</a>.</p></div></section>`}</div></div>`;
+  const feed = $("#vfeed"), vids = [...feed.querySelectorAll("video")];
   VFEED.obs?.disconnect();
-  VFEED.obs = new IntersectionObserver((entries) => entries.forEach((e) => {
-    const v = e.target.querySelector("video");
-    if (e.isIntersecting && e.intersectionRatio > 0.6) { v.muted = VFEED.muted; v.play().catch(() => {}); } else v.pause();
-  }), { threshold: [0, 0.6, 1] });
-  document.querySelectorAll(".vslide").forEach((s) => VFEED.obs.observe(s));
-  document.querySelectorAll(".vmute").forEach((b) => (b.onclick = () => { VFEED.muted = !VFEED.muted; vids.forEach((v) => (v.muted = VFEED.muted)); document.querySelectorAll(".vmute").forEach((x) => (x.textContent = VFEED.muted ? "🔇" : "🔊")); }));
-  document.querySelectorAll(".vslide video").forEach((v) => (v.onclick = () => (v.paused ? v.play() : v.pause())));
+  VFEED.obs = new IntersectionObserver((es) => es.forEach((e) => { const v = e.target.querySelector("video"); if (!v) return;
+    if (e.isIntersecting && e.intersectionRatio > 0.6) { v.preload = "auto"; v.muted = VFEED.muted; v.currentTime = 0; v.play().catch(() => {}); const nx = e.target.nextElementSibling?.querySelector("video"); if (nx) nx.preload = "auto"; trk("product", e.target.dataset.id); } else v.pause(); }), { root: feed, threshold: [0, 0.6, 1] });
+  feed.querySelectorAll(".tt-slide[data-id]").forEach((x) => VFEED.obs.observe(x));
+  const like = (id, btn, force) => { const L = VLIKES(); if (force || !L.has(id)) L.add(id); else L.delete(id); try { localStorage.setItem("lp_likes", JSON.stringify([...L].slice(-500))); } catch {} btn.classList.toggle("on", L.has(id)); btn.querySelector("span").textContent = L.has(id) ? "Liked" : "Like"; };
+  feed.querySelectorAll("[data-like]").forEach((b) => (b.onclick = () => like(b.dataset.like, b)));
+  feed.querySelectorAll("[data-share]").forEach((b) => (b.onclick = async () => { const p = PRODUCTS.find((x) => x.id === b.dataset.share), url = location.origin + "/products/" + p.id;
+    try { if (navigator.share) await navigator.share({ title: p.title, url }); else { await navigator.clipboard.writeText(url); toast("Link copied"); } } catch {} }));
+  feed.querySelectorAll("[data-snd]").forEach((b) => (b.onclick = () => { VFEED.muted = !VFEED.muted; vids.forEach((v) => (v.muted = VFEED.muted)); feed.querySelectorAll("[data-snd]").forEach((x) => (x.firstChild.textContent = snd(VFEED.muted))); }));
+  feed.querySelectorAll(".tt-slide video").forEach((v) => { let last = 0;
+    v.onclick = () => { const now = Date.now(), s = v.closest(".tt-slide");
+      if (now - last < 300) { like(s.dataset.id, s.querySelector("[data-like]"), true); const h = s.querySelector(".tt-heart-pop"); h.classList.remove("go"); void h.offsetWidth; h.classList.add("go"); last = 0; return; }
+      last = now; setTimeout(() => { if (last === now) v.paused ? v.play() : v.pause(); }, 300); }; });
 }
 
 /* ---------- Premium Live: stream + pinned products + live comments ---------- */
@@ -1286,35 +1302,64 @@ function track(params) {
 async function account() {
   document.title = "Me — LeeysPremium";
   let addr = {}; try { addr = JSON.parse(localStorage.getItem("lp_addr") || "{}") || {}; } catch {}
-  const orders = myOrders(), codes = myCodes(), vs = [...new Set([...wallet(), offerCode()].filter(Boolean))];
+  const params = new URLSearchParams(location.search), filter = params.get("orders") || "";
+  const orders = myOrders(), codes = myCodes(), vs = [...new Set([...wallet(), offerCode()].filter(Boolean))], likes = VLIKES().size;
   const name = [addr.firstName, addr.lastName].filter(Boolean).join(" ");
-  app.innerHTML = `<div class="wrap me">
-    <div class="me-head"><div class="me-av">${esc((addr.firstName || "L")[0].toUpperCase())}</div><div><h1>${name ? `Hi, ${esc(addr.firstName)}` : "My LeeysPremium"}</h1><span class="muted">${addr.email ? esc(addr.email) : "Saved on this device · no password needed"}</span></div></div>
-    <div class="me-grid">
-      <a class="me-tile" href="#meOrders"><b>${orders.length}</b><span>Orders</span></a><a class="me-tile" href="#meVouchers"><b>${vs.length}</b><span>Vouchers</span></a>
-      <a class="me-tile" href="/promo" data-link><b>${codes.length}</b><span>Draw tickets</span></a><a class="me-tile" href="/notifications" data-link><b>🔔</b><span>Notifications</span></a></div>
-    <section class="me-card" id="meAddr"><div class="row-between"><h2>📍 Shipping address & contact</h2><button class="btn sm ghost" id="meEdit">${addr.address1 ? "Edit" : "Add"}</button></div>
-      <div id="meAddrView">${addr.address1 ? `<p><b>${esc(name)}</b><br>${esc(addr.address1)}${addr.address2 ? ", " + esc(addr.address2) : ""}<br>${esc([addr.city, addr.province, addr.zip].filter(Boolean).join(", "))}<br>${esc(CONFIG.countries[addr.country] || addr.country || "")}${addr.phone ? `<br>📞 ${esc(addr.phone)}` : ""}${addr.email ? `<br>✉️ ${esc(addr.email)}` : ""}</p><p class="muted" style="font-size:13px">Filled in automatically at checkout.</p>` : `<p class="muted">No address saved yet. Add one to check out faster.</p>`}</div>
+  let pend = null; try { pend = JSON.parse(sessionStorage.getItem("lp_crypto") || "null"); } catch {}
+  const I = { pay: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/>', ship: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+    recv: '<path d="M2 6h11v10H2zM13 9h5l3 3v4h-8"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>', rate: '<circle cx="12" cy="12" r="9"/><path d="m12 7 1.5 3.2 3.5.4-2.6 2.4.7 3.5L12 14.8 8.9 16.5l.7-3.5L7 10.6l3.5-.4z"/>' };
+  const ico = (k) => `<svg viewBox="0 0 24 24">${I[k]}</svg>`;
+  const live = CONFIG.live?.status === "live";
+  app.innerHTML = `<div class="me2">
+    <header class="me2-head"><div class="me2-user"><div class="me-av">${esc((addr.firstName || "L")[0].toUpperCase())}</div><div><b>${name ? esc(name) : "Welcome to LeeysPremium"}</b><span class="me2-tier">${orders.length >= 5 ? "⭐ Gold member" : orders.length ? "Member" : "New shopper"} ›</span></div></div>
+      <div class="me2-icons"><a href="#meSettings" aria-label="Settings" class="me2-i"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1A2 2 0 1 1 4.3 17l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1A2 2 0 1 1 7 4.3l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1A2 2 0 1 1 19.7 7l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+        <button class="me2-i" id="meCart" aria-label="Cart"><svg viewBox="0 0 24 24"><path d="M5 7h14l-1.5 12h-11z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>${cart.count() ? `<i>${cart.count()}</i>` : ""}</button>
+        <button class="me2-i" id="meChat" aria-label="Chat"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg></button></div>
+      ${(SPINS.promos || [])[0] ? `<a class="me2-banner" href="/promo" data-link><span>🎡</span><b>${esc(SPINS.promos[0].title)}</b><em>›</em></a>` : `<a class="me2-banner" href="/promo" data-link><span>🔥</span><b>See today's deals, vouchers and prize draw</b><em>›</em></a>`}</header>
+    <section class="me2-card"><div class="row-between"><h2>My Purchases</h2><a href="/account?orders=all#meOrders" data-link class="me2-more">View Purchase History ›</a></div>
+      <div class="me2-row">${[["pay", "To Pay", "pay"], ["ship", "To Ship", "ship"], ["recv", "To Receive", "recv"], ["rate", "To Rate", "rate"]].map(([k, l, f]) => `<a href="/account?orders=${f}#meOrders" data-link class="me2-act ${filter === f ? "on" : ""}">${ico(k)}<span>${l}</span><i class="me2-b" data-cnt="${f}" hidden></i></a>`).join("")}</div></section>
+    <section class="me2-card"><h2>Explore More</h2><div class="me2-row">
+      <a href="/promo" data-link class="me2-x"><span style="background:linear-gradient(135deg,#8b3dff,#ff3d6e)">🎡</span><b>Spin & Win</b><small>Every spin wins</small></a>
+      <a href="/promo" data-link class="me2-x"><span style="background:linear-gradient(135deg,#ffb340,#ff6a3d)">🎟</span><b>Prize Draw</b><small>Enter free</small></a>
+      <a href="/live" data-link class="me2-x"><span style="background:linear-gradient(135deg,#ff3d6e,#c4123b)">${live ? "🔴" : "📺"}</span><b>Premium Live</b><small>${live ? "Live now!" : "Watch & shop"}</small></a>
+      <a href="/videos" data-link class="me2-x"><span style="background:linear-gradient(135deg,#2f8cff,#1546b8)">▶</span><b>Videos</b><small>${likes ? likes + " liked" : "Swipe & shop"}</small></a></div></section>
+    <section class="me2-card"><h2>My Wallet</h2><div class="me2-row">
+      <a href="#meVouchers" class="me2-w"><b>${vs.length}</b><span>Vouchers</span><small>${vs.length ? "Use at checkout" : "Claim now"}</small></a>
+      <a href="/promo" data-link class="me2-w"><b>${codes.length}</b><span>Draw tickets</span><small>Good luck!</small></a>
+      <a href="/promo" data-link class="me2-w"><b id="meSpins">0</b><span>Free spins</span><small>Spend & spin</small></a>
+      <a href="/notifications" data-link class="me2-w"><b>🔔</b><span>Updates</span><small>Orders & deals</small></a></div></section>
+    <section class="me-card" id="meOrders" ${filter ? "" : "hidden"}><div class="row-between"><h2>${{ pay: "To Pay", ship: "To Ship", recv: "To Receive", rate: "To Rate" }[filter] || "Purchase History"}</h2><a href="/account" data-link class="me2-more">Close</a></div><div id="meOrderList" class="muted">${orders.length || pend ? "Loading…" : `No orders on this device yet. <a href="/track" data-link style="text-decoration:underline">Track an order</a> from another device.`}</div></section>
+    <section class="me-card" id="meAddr"><div class="row-between"><h2>📍 My address & contact</h2><button class="btn sm ghost" id="meEdit">${addr.address1 ? "Edit" : "Add"}</button></div>
+      <div id="meAddrView">${addr.address1 ? `<p><b>${esc(name)}</b><br>${esc(addr.address1)}${addr.address2 ? ", " + esc(addr.address2) : ""}<br>${esc([addr.city, addr.province, addr.zip].filter(Boolean).join(", "))}<br>${esc(CONFIG.countries[addr.country] || addr.country || "")}${addr.phone ? `<br>📞 ${esc(addr.phone)}` : ""}${addr.email ? `<br>✉️ ${esc(addr.email)}` : ""}</p>` : `<p class="muted">No address saved yet. Add one to check out faster.</p>`}</div>
       <form id="meForm" hidden class="me-form"><input class="inp" name="email" type="email" placeholder="Email" value="${esc(addr.email || "")}"><div class="two"><input class="inp" name="firstName" placeholder="First name" value="${esc(addr.firstName || "")}"><input class="inp" name="lastName" placeholder="Last name" value="${esc(addr.lastName || "")}"></div>
         <select class="inp" name="country">${COUNTRY_OPTS()}</select><input class="inp" name="address1" placeholder="Street address" value="${esc(addr.address1 || "")}"><input class="inp" name="address2" placeholder="Apartment, unit (optional)" value="${esc(addr.address2 || "")}">
         <div class="two"><input class="inp" name="city" placeholder="City" value="${esc(addr.city || "")}"><input class="inp" name="province" placeholder="State / Province" value="${esc(addr.province || "")}"></div>
         <div class="two"><input class="inp" name="zip" placeholder="ZIP / Postal code" value="${esc(addr.zip || "")}"><input class="inp" name="phone" placeholder="Phone" value="${esc(addr.phone || "")}"></div>
         <div class="flex" style="gap:8px"><button class="btn accent">Save</button><button type="button" class="btn ghost" id="meCancel">Cancel</button></div></form></section>
+    <section class="me-card" id="meVouchers"><h2>🎟 My vouchers</h2>${vs.length ? `<div class="me-vs">${vs.map((c) => `<code>${esc(c)}</code>`).join("")}</div><p class="muted" style="font-size:13px">Applied automatically at checkout when they fit your order.</p>` : `<p class="muted">No vouchers yet. <a href="/promo" data-link style="text-decoration:underline">Claim today's vouchers</a>.</p>`}</section>
     <section class="me-card"><h2>💳 Payment methods</h2><div class="pay-icons"><span>PayPal</span><span>Visa / Mastercard</span><span>Venmo</span><span>Pay Later</span>${CONFIG.crypto ? "<span>₿ Bitcoin · ETH · USDT</span>" : ""}</div>
-      <p class="muted" style="font-size:13px;margin-bottom:0">For your safety we never store card or bank details. You pay securely each time through PayPal (cards, bank, Venmo) or our crypto checkout.</p></section>
-    <section class="me-card" id="meOrders"><h2>📦 My orders</h2>${orders.length ? `<div id="meOrderList" class="muted">Loading…</div>` : `<p class="muted">Orders you place on this device appear here. Have an order from another device? <a href="/track" data-link style="text-decoration:underline">Track it here</a>.</p>`}</section>
-    <section class="me-card" id="meVouchers"><h2>🎟 My vouchers</h2>${vs.length ? `<div class="me-vs">${vs.map((c) => `<code>${esc(c)}</code>`).join("")}</div><p class="muted" style="font-size:13px">Applied automatically at checkout when they fit your order.</p>` : `<p class="muted">No vouchers yet. <a href="/promo" data-link style="text-decoration:underline">See today's promos</a>.</p>`}</section>
-    <section class="me-card"><h2>⚙️ Settings & help</h2><div class="me-links">${"PushManager" in window ? `<button class="me-link" id="mePush">🔔 Notifications on this device</button>` : ""}<a class="me-link" href="/track" data-link>🚚 Track an order</a><a class="me-link" href="/pages/returns" data-link>↩️ Returns & refunds</a><a class="me-link" href="/pages/contact" data-link>💬 Contact us</a><a class="me-link" href="/pages/privacy" data-link>🔒 Privacy</a><button class="me-link danger" id="meClear">🗑 Remove my saved details from this device</button></div></section></div>`;
+      <p class="muted" style="font-size:13px;margin-bottom:0">For your safety we never store card or bank details — PayPal remembers them securely for you.</p></section>
+    <section class="me-card" id="meSettings"><h2>⚙️ Settings & help</h2><div class="me-links">${"PushManager" in window ? `<button class="me-link" id="mePush">🔔 Notifications on this device</button>` : ""}<a class="me-link" href="/track" data-link>🚚 Track an order</a><a class="me-link" href="/pages/returns" data-link>↩️ Returns & refunds</a><a class="me-link" href="/pages/contact" data-link>💬 Contact us</a><a class="me-link" href="/pages/privacy" data-link>🔒 Privacy</a><button class="me-link danger" id="meClear">🗑 Remove my saved details from this device</button></div></section></div>`;
   const f = $("#meForm"); f.country.value = addr.country || CONFIG.country || "US";
   $("#meEdit").onclick = () => { f.hidden = false; $("#meAddrView").hidden = true; }; $("#meCancel").onclick = () => { f.hidden = true; $("#meAddrView").hidden = false; };
   f.onsubmit = (e) => { e.preventDefault(); const a = Object.fromEntries(["email", "firstName", "lastName", "country", "address1", "address2", "city", "province", "zip", "phone"].map((k) => [k, f[k].value.trim()])); try { localStorage.setItem("lp_addr", JSON.stringify(a)); } catch {} toast("Saved"); account(); };
-  $("#meClear").onclick = () => { if (!confirm("Remove your saved address, order list, vouchers and tickets from this device? (Your orders themselves aren't affected.)")) return; ["lp_addr", "lp_orders", "lp_vouchers", "lp_voucher", "lp_tickets"].forEach((k) => { try { localStorage.removeItem(k); } catch {} }); toast("Removed from this device"); account(); };
+  $("#meClear").onclick = () => { if (!confirm("Remove your saved address, order list, vouchers and tickets from this device? (Your orders themselves aren't affected.)")) return; ["lp_addr", "lp_orders", "lp_vouchers", "lp_voucher", "lp_tickets", "lp_likes"].forEach((k) => { try { localStorage.removeItem(k); } catch {} }); toast("Removed from this device"); account(); };
+  $("#meCart").onclick = () => go("/cart"); $("#meChat").onclick = () => window.openChat?.();
   $("#mePush") && ($("#mePush").onclick = async () => { if (!DRAW.vapid) { try { const r = await api("/api/draw"); DRAW.vapid = r.vapid; } catch {} } if (!DRAW.vapid) return toast("Notifications switch on automatically during our next prize draw"); enablePush(); });
-  if (orders.length) {
-    const rows = await Promise.all(orders.slice(0, 10).map(async (o) => { try { return await api(`/api/orders/lookup?id=${encodeURIComponent(o.id)}&email=${encodeURIComponent(o.email)}`); } catch { return null; } }));
-    const box = $("#meOrderList"); if (!box) return;
-    box.innerHTML = rows.filter(Boolean).map((o) => `<a class="me-order" href="/track?order=${esc(o.id)}" data-link><div><b>#${esc(o.id)}</b><span>${new Date(o.created_at.replace(" ", "T") + "Z").toLocaleDateString()} · ${o.items.length} item${o.items.length > 1 ? "s" : ""} · ${money(o.total)}</span></div><em class="st st-${esc(o.status)}">${esc(STATUS_TEXT[o.status] || o.status)}</em></a>`).join("") || `<p class="muted">Couldn't load your orders right now.</p>`;
-  }
+  if (filter) setTimeout(() => $("#meOrders")?.scrollIntoView({ behavior: "smooth" }), 50);
+  mySpins().then((l) => { const n = l.filter((x) => !x.prizeId).length; if ($("#meSpins")) $("#meSpins").textContent = n; });
+  // Orders: group into To Pay / To Ship / To Receive / To Rate
+  const rows = (await Promise.all(orders.slice(0, 15).map(async (o) => { try { return await api(`/api/orders/lookup?id=${encodeURIComponent(o.id)}&email=${encodeURIComponent(o.email)}`); } catch { return null; } }))).filter(Boolean);
+  if (location.pathname !== "/account") return;
+  const group = (o) => ["paid", "processing", "action_needed"].includes(o.status) ? "ship" : o.status === "shipped" ? "recv" : "";
+  const toRate = (o) => (o.status === "delivered" || o.status === "shipped") && o.canReview && o.items.some((l) => !l.gift && !(o.reviews || []).some((r) => r.product_id === l.id));
+  const cnt = { pay: pend ? 1 : 0, ship: rows.filter((o) => group(o) === "ship").length, recv: rows.filter((o) => group(o) === "recv").length, rate: rows.filter(toRate).length };
+  document.querySelectorAll("[data-cnt]").forEach((b) => { const n = cnt[b.dataset.cnt]; b.textContent = n; b.hidden = !n; });
+  const box = $("#meOrderList"); if (!box) return;
+  const show = filter === "pay" ? [] : rows.filter((o) => !filter || filter === "all" || (filter === "rate" ? toRate(o) : group(o) === filter));
+  box.innerHTML = (filter === "pay" && pend ? `<a class="me-order" href="/thank-you?order=${esc(pend.id)}&crypto=1" data-link><div><b>#${esc(pend.id)}</b><span>Crypto payment waiting for confirmation</span></div><em class="st">To Pay</em></a>` : "")
+    + show.map((o) => `<a class="me-order" href="/track?order=${esc(o.id)}" data-link><div><b>#${esc(o.id)}</b><span>${new Date(o.created_at.replace(" ", "T") + "Z").toLocaleDateString()} · ${o.items.map((l) => esc(l.title.slice(0, 28))).join(", ")} · ${money(o.total)}</span></div><em class="st st-${esc(o.status)}">${toRate(o) && filter === "rate" ? "Rate now ★" : esc(STATUS_TEXT[o.status] || o.status)}</em></a>`).join("")
+    || `<p class="muted">Nothing here right now.</p>`;
 }
 
 /* ---------- Promo: every promotion in one place ---------- */
@@ -1394,7 +1439,7 @@ function notFound() { app.innerHTML = `<div class="wrap prose" style="text-align
 function route() {
   expirePromos();
   const { pathname, search } = location, params = new URLSearchParams(search);
-  markTab(); closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); clearInterval(DRAW.timer); VFEED.obs?.disconnect();
+  markTab(); document.body.classList.remove("immersive"); closeAll(); window.scrollTo(0, 0); clearInterval(SHOW.timer); clearInterval(LIVE.timer); clearInterval(DRAW.timer); VFEED.obs?.disconnect();
   let m;
   if (pathname === "/") home();
   else if (pathname === "/search") collection("all", params);
