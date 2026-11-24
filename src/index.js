@@ -593,7 +593,8 @@ async function admin(req, env, ctx, path, m, url) {
   if (path === "/api/admin/orders" && m === "GET") {
     const st = url.searchParams.get("status");
     const rows = st
-      ? (await env.DB.prepare("SELECT * FROM orders WHERE status=? ORDER BY created_at DESC LIMIT 200").bind(st).all()).results
+      ? (await env.DB.prepare("SELECT * FROM orders WHERE status=? ORDER BY created_at DESC LIMIT 200").bind(st).all()).results.filter((r, i, a) => st !== "pending" ||
+          !a.slice(0, i).some((x) => x.email === r.email && Math.abs(x.total - r.total) < 0.01 && Math.abs(Date.parse(x.created_at + "Z") - Date.parse(r.created_at + "Z")) < 3600e3)) // one row per checkout attempt
       : (await env.DB.prepare("SELECT * FROM orders WHERE status!='pending' ORDER BY created_at DESC LIMIT 200").all()).results;
     return json(rows.map(orderOut));
   }
@@ -1092,6 +1093,7 @@ export default {
   },
   async scheduled(event, env, ctx) {
     await ensureSchema(env);
+    try { await env.DB.prepare("DELETE FROM orders WHERE status='pending' AND created_at < datetime('now','-3 days')").run(); } catch {} // abandoned, never-paid checkouts
     try { await runDueDraws(env, ctx); } catch (e) { console.error("draw", e); }
     if (!env.CJ_API_KEY || new Date(event.scheduledTime).getUTCHours() % 6 !== 0) return; // CJ sync stays every 6 hours
     ctx.waitUntil((async () => { await syncTracking(env); await syncProducts(env, 25); })());
