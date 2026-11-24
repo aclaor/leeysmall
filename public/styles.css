@@ -1152,3 +1152,13 @@ body.immersive { overflow: hidden; }
 .tt-cart:hover { border-color: var(--blue-2); }
 .tt-buy { background: linear-gradient(135deg, #5cb2ff, #2f8cff 45%, #1557d6); border: 1px solid rgba(160,210,255,.5); box-shadow: 0 8px 22px rgba(47,140,255,.45), inset 0 1px 0 rgba(255,255,255,.35); border-radius: 10px; }
 .tt-empty a { color: var(--blue-2); }
+/* aligned layout: card spans full width, rail sits above it */
+.tt-info { left: 12px; right: 12px; bottom: 12px; gap: 6px; }
+.tt-user, .tt-cap { padding-right: 76px; }
+.tt-card { max-width: none; width: 100%; box-sizing: border-box; padding: 10px; gap: 12px; }
+.tt-rail { right: 12px; bottom: 136px; gap: 14px; }
+.tt-acts { width: 104px; flex: none; }
+.tt-cart, .tt-buy { height: 36px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; font-size: 13px; font-weight: 700; }
+.tt-cart { color: var(--blue-2); } .tt-cart svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.tt-thumb { width: 72px; height: 72px; }
+@media (min-width: 1025px) { .tt-info { left: calc(50% - 30vh + 12px); right: auto; width: calc(60vh - 24px); max-width: 520px; } .tt-rail { right: calc(50% - 30vh + 12px); bottom: 150px; } .tt-user, .tt-cap { padding-right: 76px; } }

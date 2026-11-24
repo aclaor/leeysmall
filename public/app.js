@@ -645,7 +645,7 @@ function videosPage() {
           <div class="tt-card"><div class="tt-thumb">${img ? `<img src="${esc(img)}" alt="">` : art(p)}${off ? `<em>-${off}%</em>` : ""}</div>
             <div class="tt-cinfo"><span class="tt-ct">${esc(p.title.slice(0, 60))}</span><span class="tt-cm">${p.promo ? `⚡ ${esc(p.promo.label)} · ` : ""}🚚 ${esc(etaShort(p))}</span>
               <div class="tt-price"><b>${money(p.price)}</b>${p.compareAt ? `<s>${money(p.compareAt)}</s>` : ""}${p.sold >= 10 ? `<small>${p.sold >= 1000 ? (p.sold / 1000).toFixed(1) + "K+" : p.sold} sold</small>` : ""}</div></div>
-            <div class="tt-acts"><button class="tt-cart" data-add="${p.id}" aria-label="Add to cart" ${p.stock > 0 ? "" : "disabled"}>🛒</button><a class="tt-buy" href="/products/${p.id}" data-link>${p.stock > 0 ? "Buy Now" : "Sold out"}</a></div></div></div></section>`; }).join("")
+            <div class="tt-acts"><button class="tt-cart" data-add="${p.id}" aria-label="Add to cart" ${p.stock > 0 ? "" : "disabled"}><svg viewBox="0 0 24 24"><path d="M3 4h2l2.4 11h11l2-8H6.3"/><circle cx="9" cy="19.5" r="1.5"/><circle cx="17" cy="19.5" r="1.5"/></svg>Add</button><a class="tt-buy" href="/products/${p.id}" data-link>${p.stock > 0 ? "Buy Now" : "Sold out"}</a></div></div></div></section>`; }).join("")
       : `<section class="tt-slide tt-empty"><div><div style="font-size:46px">▶</div><b>Product videos are coming soon</b><p>Meanwhile, catch us on <a href="/live" data-link>Premium Live</a> or <a href="/collections/all" data-link>shop all products</a>.</p></div></section>`}</div></div>`;
   const feed = $("#vfeed"), vids = [...feed.querySelectorAll("video")];
   VFEED.obs?.disconnect();
