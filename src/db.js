@@ -116,7 +116,7 @@ const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d
 export function toPublic(r) {
   return {
     id: r.id, title: r.title, description: r.description, collection: r.collection, price: r.price,
-    compareAt: null, stock: r.stock, rating: r.reviews > 0 ? Math.round(r.rating * 10) / 10 : null, reviews: r.reviews > 0 ? r.reviews : 0, // only real, verified-buyer reviews badge: r.badge, sold: r.sold || 0, createdAt: r.created_at, video: r.video || null,
+    compareAt: null, stock: r.stock, rating: r.reviews > 0 ? Math.round(r.rating * 10) / 10 : null, reviews: r.reviews > 0 ? r.reviews : 0, /* only real, verified-buyer reviews */ badge: r.badge, sold: r.sold || 0, createdAt: r.created_at, video: r.video || null,
     hue: r.hue, icon: r.icon, ships: r.ships, images: parse(r.images, []), variants: parse(r.variants, []),
     variantImages: Object.fromEntries(Object.entries(parse(r.variant_map, {}) || {}).filter(([, v]) => v && /^https?:\/\//.test(v.image || "")).map(([k, v]) => [k, v.image])),
   };
